@@ -1,8 +1,8 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.digitalschool.app',
-  appName: 'Digital School System',
+  appId: 'com.subraimission.app',
+  appName: 'Subrai Mission Convent School',
   webDir: 'dist'
 };
 

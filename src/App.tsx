@@ -420,6 +420,8 @@ interface Staff {
   joiningDate: string;
   dob?: string;
   status: 'Active' | 'Inactive';
+  username?: string;
+  password?: string;
 }
 
 interface Department {
@@ -9217,7 +9219,9 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
     designation: '',
     status: 'Active',
     dob: '',
-    joiningDate: new Date().toISOString().split('T')[0]
+    joiningDate: new Date().toISOString().split('T')[0],
+    username: '',
+    password: ''
   });
   const [newDepartment, setNewDepartment] = useState('');
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
@@ -9271,7 +9275,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         setEditingStaff(null);
         alert('Staff updated successfully!');
       } else {
-        const staffId = `STF-${Math.floor(100000 + Math.random() * 900000)}`;
+        const staffId = newStaff.username || `STF-${Math.floor(100000 + Math.random() * 900000)}`;
         const { data: staffData, error: staffError } = await supabase
           .from('staff')
           .insert([{
@@ -9299,7 +9303,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
             id: staffId,
             username: staffId,
             name: `${newStaff.name} ${newStaff.surname}`,
-            password: '123',
+            password: newStaff.password || '123',
             role: newStaff.role?.toLowerCase(),
             permissions: []
           }]);
@@ -9902,6 +9906,27 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                   </div>
 
                   <Input label="Joining Date" type="date" value={newStaff.joiningDate} onChange={(e: any) => setNewStaff({...newStaff, joiningDate: e.target.value})} />
+                  
+                  <div className="col-span-full border-t border-slate-100 pt-6 mt-2">
+                    <h4 className="text-sm font-black text-primary uppercase tracking-widest mb-4">Login Credentials</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Input 
+                        label="Login ID (Username)" 
+                        placeholder="e.g. STF-123456" 
+                        value={newStaff.username} 
+                        onChange={(e: any) => setNewStaff({...newStaff, username: e.target.value})} 
+                        disabled={!!editingStaff}
+                      />
+                      <Input 
+                        label="Login Password" 
+                        type="text"
+                        placeholder="Set password" 
+                        value={newStaff.password} 
+                        onChange={(e: any) => setNewStaff({...newStaff, password: e.target.value})} 
+                      />
+                    </div>
+                    <p className="text-[10px] text-text-sub mt-2 font-bold uppercase tracking-tighter">If Login ID is left blank, a random ID will be generated.</p>
+                  </div>
                 </div>
               </div>
 
@@ -11102,9 +11127,10 @@ const RoleAssignPanel = ({ users, setUsers }: any) => {
   ];
 
   const filteredUsers = users.filter((u: any) => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.role.toLowerCase().includes(searchTerm.toLowerCase())
+    u.role.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    u.role !== 'super-admin'
   );
 
   return (
@@ -11584,6 +11610,18 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
   );
 };
 
+const downloadAPK = (type: 'student' | 'staff') => {
+  const link = document.createElement('a');
+  link.href = '#'; // In a real app, this would be the URL to the APK file
+  link.download = type === 'student' ? 'Subrai_Mission_Student.apk' : 'Subrai_Mission_Staff.apk';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // For demonstration in this environment, we also show a toast/alert
+  alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated.`);
+};
+
 const SuperAdminPanel = ({ users, setUsers }: any) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -11667,7 +11705,7 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
                       <div>
                         <p className="font-black text-text-heading text-base">{user.name}</p>
                         <p className="text-xs font-bold text-primary uppercase tracking-widest">
-                          {['admin', 'teacher', 'parent'].includes(user.role) ? '********' : user.id}
+                          {user.id}
                         </p>
                       </div>
                     </div>
@@ -11696,7 +11734,7 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
                     ) : (
                       <div className="flex items-center gap-2 font-mono font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg w-fit">
                         <Lock size={12} className="text-slate-400" />
-                        {['admin', 'teacher', 'parent'].includes(user.role) ? '********' : (user.password || '12345678')}
+                        {user.password || '12345678'}
                       </div>
                     )}
                   </td>
@@ -11731,22 +11769,83 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
           </table>
         </div>
       </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="p-6 border-2 border-primary/10 bg-primary/5">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center">
+              <Smartphone size={24} />
+            </div>
+            <div>
+              <h4 className="font-black text-text-heading uppercase tracking-tight">Android App</h4>
+              <p className="text-[10px] font-bold text-text-sub uppercase">Native APK Build</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <button 
+              onClick={() => downloadAPK('student')}
+              className="w-full py-3 bg-white border-2 border-primary/20 rounded-xl text-xs font-black text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={14} /> Student/Parent APK
+            </button>
+            <button 
+              onClick={() => downloadAPK('staff')}
+              className="w-full py-3 bg-white border-2 border-primary/20 rounded-xl text-xs font-black text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={14} /> Staff/Teacher APK
+            </button>
+          </div>
+        </Card>
+
+        <Card className="p-6 border-2 border-blue-100 bg-blue-50/30">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center">
+              <Laptop size={24} />
+            </div>
+            <div>
+              <h4 className="font-black text-text-heading uppercase tracking-tight">iOS App</h4>
+              <p className="text-[10px] font-bold text-text-sub uppercase">Apple App Store</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <button 
+              onClick={() => alert('iOS App Store link will be activated once the app is published.')}
+              className="w-full py-3 bg-white border-2 border-blue-200 rounded-xl text-xs font-black text-blue-600 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={14} /> Download for iOS
+            </button>
+            <p className="text-[9px] text-center text-blue-400 font-bold uppercase tracking-widest mt-2">Coming Soon to App Store</p>
+          </div>
+        </Card>
+
+        <Card className="p-6 border-2 border-emerald-100 bg-emerald-50/30">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 bg-emerald-600 text-white rounded-2xl flex items-center justify-center">
+              <Plus size={24} />
+            </div>
+            <div>
+              <h4 className="font-black text-text-heading uppercase tracking-tight">Web App (PWA)</h4>
+              <p className="text-[10px] font-bold text-text-sub uppercase">Install as PWA</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <button 
+              onClick={() => {
+                alert('PWA Installation activated. You can now install this app on your home screen via browser settings.');
+              }}
+              className="w-full py-3 bg-white border-2 border-emerald-200 rounded-xl text-xs font-black text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Plus size={14} /> Activate PWA Install
+            </button>
+            <p className="text-[9px] text-center text-emerald-400 font-bold uppercase tracking-widest mt-2">Works on all devices</p>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 };
 
 export default function App() {
-  const downloadAPK = (type: 'student' | 'staff') => {
-    const link = document.createElement('a');
-    link.href = '#'; // In a real app, this would be the URL to the APK file
-    link.download = type === 'student' ? 'Subrai_Mission_Student.apk' : 'Subrai_Mission_Staff.apk';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // For demonstration in this environment, we also show a toast/alert
-    alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated.`);
-  };
 
   // Supabase Data Fetching
   useEffect(() => {
@@ -12987,6 +13086,32 @@ export default function App() {
             documents: s.documents || []
           };
           setStudents([...students, newStudent]);
+
+          // Create Student User
+          await supabase
+            .from('users')
+            .insert([{
+              id: newStudent.studentId,
+              username: newStudent.studentId,
+              name: `${newStudent.name} ${newStudent.surname}`,
+              password: formData.studentPassword || '123',
+              role: 'student',
+              permissions: []
+            }]);
+
+          // Create Parent User
+          const parentId = formData.parentId || `PAR-${newStudent.studentId}`;
+          await supabase
+            .from('users')
+            .insert([{
+              id: parentId,
+              username: parentId,
+              name: `Parent of ${newStudent.name}`,
+              password: formData.parentPassword || '123',
+              role: 'parent',
+              permissions: []
+            }]);
+
           showModal('Success', `Student Registered Successfully! ID: ${newStudent.studentId}`);
         }
       }
@@ -14015,6 +14140,52 @@ export default function App() {
                     </div>
                     <div className="mt-6">
                     </div>
+                  </Card>
+
+                  {/* Login Credentials */}
+                  <Card className={isViewOnly ? "pointer-events-none opacity-90" : ""}>
+                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
+                      <Lock size={20} />
+                      Login Credentials
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                        <h4 className="text-sm font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
+                          <GraduationCap size={16} /> Student Login
+                        </h4>
+                        <Input 
+                          label="Student Login ID" 
+                          placeholder="e.g. STU12345" 
+                          value={formData.studentId || ''} 
+                          onChange={(e: any) => setFormData({...formData, studentId: e.target.value})}
+                          disabled={!!editingStudentId}
+                        />
+                        <Input 
+                          label="Student Password" 
+                          placeholder="Set password" 
+                          value={formData.studentPassword || ''} 
+                          onChange={(e: any) => setFormData({...formData, studentPassword: e.target.value})} 
+                        />
+                      </div>
+                      <div className="space-y-4 p-4 bg-purple-50/50 rounded-2xl border border-purple-100">
+                        <h4 className="text-sm font-black text-purple-700 uppercase tracking-widest flex items-center gap-2">
+                          <Users size={16} /> Parent Login
+                        </h4>
+                        <Input 
+                          label="Parent Login ID" 
+                          placeholder="e.g. PAR12345" 
+                          value={formData.parentId || ''} 
+                          onChange={(e: any) => setFormData({...formData, parentId: e.target.value})} 
+                        />
+                        <Input 
+                          label="Parent Password" 
+                          placeholder="Set password" 
+                          value={formData.parentPassword || ''} 
+                          onChange={(e: any) => setFormData({...formData, parentPassword: e.target.value})} 
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-text-sub mt-4 font-bold uppercase tracking-tighter">If IDs are left blank, they will be auto-generated based on admission details.</p>
                   </Card>
 
                   {/* Health & Relations */}

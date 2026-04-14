@@ -1,4 +1,4 @@
-package com.digitalschool.app;
+package com.subraimission.app;
 
 import com.getcapacitor.BridgeActivity;
 
