@@ -86,7 +86,8 @@ import {
   ChevronDown,
   ChevronLeft,
   MessageSquare,
-  Send
+  Send,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -1603,13 +1604,21 @@ const FileUpload = ({ label, icon: Icon = Upload, required = false, onChange, pr
       {!isViewOnly && (
         <input
           type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
           onChange={onChange}
         />
       )}
       <div className={`flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl transition-all overflow-hidden min-h-[120px] ${!isViewOnly ? 'group-hover:border-primary group-hover:bg-primary/5' : 'opacity-80'}`}>
         {preview ? (
-          <img src={preview} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
+          preview.startsWith('data:application/pdf') ? (
+            <div className="flex flex-col items-center gap-1">
+              <FileText className="text-primary" size={32} />
+              <span className="text-[10px] text-primary font-medium">PDF Document</span>
+            </div>
+          ) : (
+            <img src={preview} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
+          )
         ) : (
           <>
             <Icon className="text-slate-400" size={24} />
@@ -4306,7 +4315,7 @@ const FeeManagement = ({
         .from('contra_entries')
         .insert([{
           type: contraForm.type,
-          amount: contraForm.amount,
+          amount: Number(contraForm.amount),
           reference: contraForm.reference,
           date: contraForm.date
         }])
@@ -4525,14 +4534,17 @@ const FeeManagement = ({
           invoice_number: invoiceNumber,
           collected_by: 'Admin',
           month: selectedMonth,
-          date: formatDate(new Date()),
+          date: new Date().toISOString().split('T')[0],
           due_date: paymentDetails.dueDate,
           status: amountToCollect >= totalPayable ? 'Paid' : 'Partial',
           breakdown: paymentBreakdown
         }])
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase Insert Error:', error);
+        throw error;
+      }
 
       if (inserted) {
         const newTransaction: FeeTransaction = {
@@ -4621,11 +4633,12 @@ const FeeManagement = ({
         const exists = feeMaster.find((f: any) => f.class === masterClass && f.feeType === feeType);
         if (!exists) {
           newEntries.push({
-            class: masterClass,
+            class_name: masterClass,
             fee_type: feeType,
-            amount: data.amount,
+            amount: Number(data.amount),
             frequency: data.frequency,
-            student_type: data.studentType || 'Both'
+            student_type: data.studentType || 'Both',
+            academic_session: schoolProfile.currentSession || '2023-24'
           });
         }
       }
@@ -4643,6 +4656,7 @@ const FeeManagement = ({
         if (inserted) {
           const formattedInserted = inserted.map(fm => ({
             ...fm,
+            class: fm.class_name,
             feeType: fm.fee_type,
             studentType: fm.student_type
           }));
@@ -4921,9 +4935,16 @@ const FeeManagement = ({
           <div className="space-y-6">
             <Card className="text-center">
               <h3 className="text-lg font-bold mb-4">Scan to Pay</h3>
-              <div className="aspect-square bg-slate-100 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 mb-4">
-                <QrCode size={120} className="text-slate-400" />
+              <div className="aspect-square bg-slate-100 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 mb-4 overflow-hidden">
+                {schoolProfile.feeQrUrl ? (
+                  <img src={schoolProfile.feeQrUrl} alt="Fee QR" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                ) : (
+                  <QrCode size={120} className="text-slate-400" />
+                )}
               </div>
+              {schoolProfile.feeUpiId && (
+                <p className="text-sm font-black text-primary mb-2">{schoolProfile.feeUpiId}</p>
+              )}
               <p className="text-xs text-text-secondary">Accept payments via UPI QR Code</p>
             </Card>
 
@@ -11278,8 +11299,16 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
         };
       } else if (activeTab === 'income-head') {
         table = 'income_heads';
+        payload = {
+          name: formData.name,
+          description: formData.description
+        };
       } else if (activeTab === 'expense-head') {
         table = 'expense_heads';
+        payload = {
+          name: formData.name,
+          description: formData.description
+        };
       }
 
       if (formData.id) {
@@ -11707,6 +11736,18 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
 };
 
 export default function App() {
+  const downloadAPK = (type: 'student' | 'staff') => {
+    const link = document.createElement('a');
+    link.href = '#'; // In a real app, this would be the URL to the APK file
+    link.download = type === 'student' ? 'Subrai_Mission_Student.apk' : 'Subrai_Mission_Staff.apk';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // For demonstration in this environment, we also show a toast/alert
+    alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated.`);
+  };
+
   // Supabase Data Fetching
   useEffect(() => {
     const runMigrations = async () => {
@@ -11835,6 +11876,8 @@ export default function App() {
     principalSignature: '',
     classTeacherSignature: '',
     schoolStamp: '',
+    feeQrUrl: '',
+    feeUpiId: '',
     cameraUrls: [
       { id: '1', name: 'Main Gate', url: 'https://picsum.photos/seed/gate/640/480' },
       { id: '2', name: 'Hostel Block A', url: 'https://picsum.photos/seed/hostel/640/480' },
@@ -11987,6 +12030,8 @@ export default function App() {
           principalSignature: profile.principal_signature_url,
           classTeacherSignature: profile.class_teacher_signature_url,
           schoolStamp: profile.official_stamp_url,
+          feeQrUrl: profile.fee_qr_url,
+          feeUpiId: profile.fee_upi_id,
         }));
         setTaxes(profile.tax_percentage || 0);
       }
@@ -12043,7 +12088,7 @@ export default function App() {
           localGuardianContact: s.local_guardian_contact,
           allergy: s.allergies,
           hasDisability: s.disability === 'Yes',
-          disabilityDetails: s.disability === 'Yes' ? s.disability : '',
+          disabilityDetails: s.disability_details || '',
           admissionDate: s.admission_date,
           photo: s.photo_url,
           relationsInSchool: [], // Need to fetch from student_relations
@@ -12693,6 +12738,8 @@ export default function App() {
         official_stamp_url: schoolProfile.schoolStamp,
         warden_id: schoolProfile.wardenPanelId,
         warden_password: schoolProfile.wardenPanelPassword,
+        fee_qr_url: schoolProfile.feeQrUrl,
+        fee_upi_id: schoolProfile.feeUpiId,
         tax_percentage: taxes,
         current_academic_session: schoolProfile.currentSession
       };
@@ -12713,14 +12760,18 @@ export default function App() {
       }
 
       showModal('Success', 'System Settings Updated Successfully!');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving settings:', err);
-      showModal('Error', 'Failed to save settings.');
+      showModal('Error', `Failed to save settings: ${err.message || 'Unknown error'}`);
     }
   };
 
   const compressImage = (base64: string, maxWidth = 800, quality = 0.7): Promise<string> => {
     return new Promise((resolve) => {
+      if (!base64 || !base64.startsWith('data:image/')) {
+        resolve(base64);
+        return;
+      }
       const img = new Image();
       img.src = base64;
       img.onload = () => {
@@ -12822,8 +12873,11 @@ export default function App() {
         local_guardian_contact: formData.localGuardianContact,
         allergies: formData.allergy,
         disability: formData.hasDisability ? 'Yes' : 'No',
+        disability_details: formData.disabilityDetails,
         admission_date: formData.admissionDate || new Date().toISOString().split('T')[0],
-        photo_url: formData.photo
+        photo_url: formData.photo,
+        relations: formData.relationsInSchool || [],
+        documents: formData.documents || []
       };
 
       if (editingStudentId) {
@@ -12871,7 +12925,7 @@ export default function App() {
           localGuardianContact: payload.local_guardian_contact,
           allergy: payload.allergies,
           hasDisability: payload.disability === 'Yes',
-          disabilityDetails: payload.disability === 'Yes' ? payload.disability : '',
+          disabilityDetails: payload.disability_details || '',
           admissionDate: payload.admission_date,
           photo: payload.photo_url,
           relationsInSchool: formData.relationsInSchool || [],
@@ -12926,11 +12980,11 @@ export default function App() {
             localGuardianContact: s.local_guardian_contact,
             allergy: s.allergies,
             hasDisability: s.disability === 'Yes',
-            disabilityDetails: s.disability === 'Yes' ? s.disability : '',
+            disabilityDetails: s.disability_details || '',
             admissionDate: s.admission_date,
             photo: s.photo_url,
-            relationsInSchool: formData.relationsInSchool || [],
-            documents: formData.documents || []
+            relationsInSchool: s.relations || [],
+            documents: s.documents || []
           };
           setStudents([...students, newStudent]);
           showModal('Success', `Student Registered Successfully! ID: ${newStudent.studentId}`);
@@ -12966,7 +13020,11 @@ export default function App() {
         >
           {/* Logo Area */}
           <div className="flex justify-center mb-8">
-            <div className="bg-white p-6 rounded-[32px] shadow-2xl border-4 border-slate-50">
+            <button 
+              onClick={() => downloadAPK('student')}
+              className="bg-white p-6 rounded-[32px] shadow-2xl border-4 border-slate-50 hover:scale-105 transition-transform cursor-pointer group relative"
+              title="Click to download Android App"
+            >
               {schoolProfile.logo ? (
                 <img 
                   src={schoolProfile.logo} 
@@ -12979,7 +13037,10 @@ export default function App() {
                   <School size={48} className="text-slate-400" />
                 </div>
               )}
-            </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary text-white text-[8px] font-black px-3 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg">
+                DOWNLOAD APK
+              </div>
+            </button>
           </div>
 
           <div className="bg-white/95 rounded-[32px] overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.3)] border border-white/50">
@@ -13090,7 +13151,42 @@ export default function App() {
               )}
             </div>
 
-            <div className="bg-slate-50 py-8 text-center border-t border-slate-100 flex flex-col items-center gap-4">
+            <div className="bg-slate-50 py-8 text-center border-t border-slate-100 flex flex-col items-center gap-6">
+              <div className="px-6 w-full">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Download Mobile App</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  <button 
+                    onClick={() => downloadAPK('student')}
+                    className="flex items-center justify-center gap-3 bg-slate-900 text-white py-3 px-4 rounded-2xl hover:bg-slate-800 transition-all group shadow-lg shadow-slate-900/20"
+                  >
+                    <Smartphone size={24} className="group-hover:scale-110 transition-transform text-green-400" />
+                    <div className="text-left">
+                      <p className="text-[8px] uppercase font-bold text-slate-400 leading-none mb-1">Android App</p>
+                      <p className="text-sm font-black leading-tight uppercase tracking-tight">Student/Parent APK</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => downloadAPK('staff')}
+                    className="flex items-center justify-center gap-3 bg-slate-900 text-white py-3 px-4 rounded-2xl hover:bg-slate-800 transition-all group shadow-lg shadow-slate-900/20"
+                  >
+                    <Smartphone size={24} className="group-hover:scale-110 transition-transform text-blue-400" />
+                    <div className="text-left">
+                      <p className="text-[8px] uppercase font-bold text-slate-400 leading-none mb-1">Android App</p>
+                      <p className="text-sm font-black leading-tight uppercase tracking-tight">Staff/Teacher APK</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-2 opacity-60">
+                  <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Student</span>
+                  <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Parent</span>
+                  <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Staff</span>
+                  <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Teacher</span>
+                </div>
+              </div>
+
               <p className="text-sm text-slate-500 font-bold uppercase tracking-widest px-4">
                 a Product of <span className="text-blue-900 font-black">digital access</span> powered by <span className="text-blue-900 font-black">JOSHODA</span>
               </p>
@@ -13119,14 +13215,18 @@ export default function App() {
         shadow-2xl lg:shadow-none
       `}>
         <div className="p-6 flex items-center gap-3 border-b border-slate-50 relative">
-          <div className="shrink-0">
+          <button 
+            onClick={() => downloadAPK('student')}
+            className="shrink-0 hover:scale-110 transition-transform cursor-pointer"
+            title="Download Android App"
+          >
             <img 
               src={schoolProfile.logo || 'https://images.unsplash.com/photo-1594608661623-aa0bd3a67d28?q=80&w=200&auto=format&fit=crop'} 
               alt="Logo" 
               className={`${isSidebarOpen ? 'w-12' : 'w-10'} h-auto transition-all`}
               referrerPolicy="no-referrer"
             />
-          </div>
+          </button>
           {isSidebarOpen && (
             <div className="overflow-hidden whitespace-nowrap">
               <h2 className="font-black text-sm leading-tight text-primary tracking-tighter uppercase">
@@ -15111,6 +15211,29 @@ export default function App() {
                               }
                             }}
                           />
+                          <FileUpload 
+                            label="Fee Payment QR Code" 
+                            icon={QrCode} 
+                            preview={schoolProfile.feeQrUrl}
+                            onChange={(e: any) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setSchoolProfile({...schoolProfile, feeQrUrl: reader.result as string});
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                          <div className="col-span-full">
+                            <Input 
+                              label="Fee UPI ID (e.g. school@upi)" 
+                              placeholder="Enter UPI ID for fee payments"
+                              value={schoolProfile.feeUpiId} 
+                              onChange={(e: any) => setSchoolProfile({...schoolProfile, feeUpiId: e.target.value})} 
+                            />
+                          </div>
                         </div>
                       </Card>
 

@@ -1,5 +1,8 @@
 -- Supabase SQL Schema for School Management System
 
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Master Data Management
 CREATE TABLE IF NOT EXISTS academic_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -72,6 +75,8 @@ CREATE TABLE IF NOT EXISTS school_profile (
     tax_percentage NUMERIC DEFAULT 0,
     warden_id TEXT,
     warden_password TEXT,
+    fee_qr_url TEXT,
+    fee_upi_id TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -156,24 +161,11 @@ CREATE TABLE IF NOT EXISTS students (
     local_guardian_contact TEXT,
     allergies TEXT,
     disability TEXT DEFAULT 'No',
+    disability_details TEXT,
+    photo_url TEXT,
+    relations JSONB DEFAULT '[]',
+    documents JSONB DEFAULT '[]',
     admission_date DATE DEFAULT CURRENT_DATE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS student_relations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
-    relation_type TEXT,
-    name TEXT,
-    details TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS student_documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
-    document_type TEXT, -- e.g., 'Photo', 'Aadhaar', 'Caste', 'ParentDoc', 'Signature'
-    file_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -542,7 +534,7 @@ CREATE TABLE IF NOT EXISTS hostel_attendance (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Initial Data Seeding (Optional)
+-- Initial Data Seeding
 INSERT INTO academic_sessions (year) VALUES 
 ('2023-24'), ('2024-25'), ('2025-26'), ('2026-27'), ('2027-28'), ('2028-29')
 ON CONFLICT (year) DO NOTHING;
@@ -577,9 +569,6 @@ INSERT INTO subjects (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- Enable Row Level Security (RLS) and Add Granular Policies
--- This section ensures that all tables have RLS enabled with specific operation-based policies.
--- NOTE: These are currently permissive for development. For production, replace 'true' with 'auth.uid() = ...' or role checks.
-
 DO $$
 DECLARE
     t text;
@@ -602,14 +591,109 @@ BEGIN
         
         -- 2. INSERT: Allow write access
         EXECUTE format('DROP POLICY IF EXISTS "Allow Insert" ON public.%I', t);
-        EXECUTE format('CREATE POLICY "Allow Insert" ON public.%I FOR INSERT WITH CHECK (true)', t);
+        EXECUTE format('CREATE POLICY "Allow Insert" ON public.%I FOR INSERT WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
         
         -- 3. UPDATE: Allow update access
         EXECUTE format('DROP POLICY IF EXISTS "Allow Update" ON public.%I', t);
-        EXECUTE format('CREATE POLICY "Allow Update" ON public.%I FOR UPDATE USING (true) WITH CHECK (true)', t);
+        EXECUTE format('CREATE POLICY "Allow Update" ON public.%I FOR UPDATE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
         
         -- 4. DELETE: Allow delete access
         EXECUTE format('DROP POLICY IF EXISTS "Allow Delete" ON public.%I', t);
-        EXECUTE format('CREATE POLICY "Allow Delete" ON public.%I FOR DELETE USING (true)', t);
+        EXECUTE format('CREATE POLICY "Allow Delete" ON public.%I FOR DELETE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+    END LOOP;
+END $$;
+-- 1. Add missing columns to students table
+ALTER TABLE IF EXISTS public.students 
+ADD COLUMN IF NOT EXISTS disability_details TEXT;
+
+-- 2. Add missing columns to school_profile table
+ALTER TABLE IF EXISTS public.school_profile 
+ADD COLUMN IF NOT EXISTS fee_qr_url TEXT,
+ADD COLUMN IF NOT EXISTS fee_upi_id TEXT;
+
+-- 3. Ensure RLS policies allow authenticated/anonymous access for these operations
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN 
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_type = 'BASE TABLE'
+    LOOP
+        -- Enable RLS
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+        
+        -- SELECT: Allow read access
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Select" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Select" ON public.%I FOR SELECT USING (true)', t);
+        
+        -- INSERT: Allow write access
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Insert" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Insert" ON public.%I FOR INSERT WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+        
+        -- UPDATE: Allow update access
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Update" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Update" ON public.%I FOR UPDATE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+        
+        -- DELETE: Allow delete access
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Delete" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Delete" ON public.%I FOR DELETE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+    END LOOP;
+END $$;
+-- 1. Add missing columns to students table
+ALTER TABLE IF EXISTS public.students 
+ADD COLUMN IF NOT EXISTS photo_url TEXT,
+ADD COLUMN IF NOT EXISTS disability_details TEXT,
+ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]';
+
+-- 2. Add missing columns to school_profile table
+ALTER TABLE IF EXISTS public.school_profile 
+ADD COLUMN IF NOT EXISTS fee_qr_url TEXT,
+ADD COLUMN IF NOT EXISTS fee_upi_id TEXT;
+
+-- 3. Refresh the schema cache (Reload PostgREST)
+-- After running this, go to Settings -> API and click "Reload PostgREST" 
+-- if the error persists.
+-- Final Schema Fixes and Column Additions
+-- Run this to ensure all required columns exist for Student Registration and Settings
+
+-- 1. Add missing columns to students table
+ALTER TABLE IF EXISTS public.students 
+ADD COLUMN IF NOT EXISTS photo_url TEXT,
+ADD COLUMN IF NOT EXISTS disability_details TEXT,
+ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]',
+ADD COLUMN IF NOT EXISTS relations JSONB DEFAULT '[]';
+
+-- 2. Add missing columns to school_profile table
+ALTER TABLE IF EXISTS public.school_profile 
+ADD COLUMN IF NOT EXISTS fee_qr_url TEXT,
+ADD COLUMN IF NOT EXISTS fee_upi_id TEXT;
+
+-- 3. Ensure RLS policies are applied to all tables
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN 
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_type = 'BASE TABLE'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+        
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Select" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Select" ON public.%I FOR SELECT USING (true)', t);
+        
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Insert" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Insert" ON public.%I FOR INSERT WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+        
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Update" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Update" ON public.%I FOR UPDATE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
+        
+        EXECUTE format('DROP POLICY IF EXISTS "Allow Delete" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Allow Delete" ON public.%I FOR DELETE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
     END LOOP;
 END $$;
