@@ -118,7 +118,7 @@ import { SqlEditor } from './components/SqlEditor';
 
 // --- Types ---
 
-type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'live-camera' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'parent-panel' | 'leave-management' | 'reports' | 'calendar' | 'role-assign' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor';
+type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'live-camera' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'role-assign' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor';
 
 interface User {
   id: string;
@@ -1732,10 +1732,31 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     }
   };
 
+  const playBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1);
+    } catch (e) {
+      console.error("Audio error:", e);
+    }
+  };
+
   function onScanSuccess(decodedText: string) {
     const student = students.find((s: any) => s.studentId === decodedText);
     if (student) {
       markAttendance(student, 'Present');
+      playBeep();
       setScanResult(`Attendance marked for ${student.name} ${student.surname}`);
       setTimeout(() => setScanResult(null), 3000);
     } else {
@@ -3132,6 +3153,7 @@ const Academics = ({
   const [rollClass, setRollClass] = useState('');
   const [rollSection, setRollSection] = useState('');
   const [rollSearch, setRollSearch] = useState('');
+  const [rollNumberChanges, setRollNumberChanges] = useState<Record<string, string>>({});
 
   const handleSaveRollNumbers = async (updatedStudents: any[]) => {
     if (!supabase) {
@@ -3144,11 +3166,6 @@ const Academics = ({
         .from('students')
         .upsert(updatedStudents.map(s => ({
           id: s.id,
-          student_id: s.studentId,
-          name: s.name,
-          surname: s.surname,
-          class: s.class,
-          section: s.section,
           roll_number: s.rollNumber
         })), { onConflict: 'id' });
 
@@ -3185,7 +3202,7 @@ const Academics = ({
           { id: 'timetable', label: 'Time Table', icon: Clock },
           { id: 'assignments', label: 'Teacher Assignments', icon: UserCheck },
           { id: 'promotion', label: 'Promotion', icon: ArrowUpCircle, adminOnly: true },
-          { id: 'rollnumber', label: 'Roll Number', icon: Hash },
+          { id: 'rollnumber', label: 'Roll Number', icon: Hash, teacherOnly: true },
           { id: 'syllabus', label: 'Syllabus', icon: BookOpen },
           { 
             id: 'homework', 
@@ -3200,7 +3217,11 @@ const Academics = ({
             ) 
           },
           { id: 'planner', label: 'Academic Planner', icon: Calendar }
-        ].filter(tab => !tab.adminOnly || currentUser?.role === 'admin' || currentUser?.role === 'super-admin').map((tab) => (
+        ].filter(tab => {
+          if (tab.adminOnly) return currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
+          if (tab.teacherOnly) return currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher';
+          return true;
+        }).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
@@ -3624,13 +3645,13 @@ const Academics = ({
                                     type="text" 
                                     className="input-field py-2 pr-8 text-sm" 
                                     placeholder="Enter Roll No"
-                                    defaultValue={s.rollNumber || ''}
+                                    value={rollNumberChanges[s.id] !== undefined ? rollNumberChanges[s.id] : (s.rollNumber || '')}
+                                    onChange={(e) => setRollNumberChanges(prev => ({ ...prev, [s.id]: e.target.value }))}
                                     id={`roll-${s.id}`}
                                   />
                                   <button 
                                     onClick={() => {
-                                      const input = document.getElementById(`roll-${s.id}`) as HTMLInputElement;
-                                      if (input) input.value = '';
+                                      setRollNumberChanges(prev => ({ ...prev, [s.id]: '' }));
                                     }}
                                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-500 opacity-0 group-hover/input:opacity-100 transition-all"
                                     title="Clear Roll Number"
@@ -3696,10 +3717,11 @@ const Academics = ({
                         const updated = students
                           .filter((s: any) => s.class === rollClass && s.section === rollSection)
                           .map((s: any) => {
-                            const input = document.getElementById(`roll-${s.id}`) as HTMLInputElement;
-                            return { ...s, rollNumber: input?.value || '' };
+                            const newRoll = rollNumberChanges[s.id];
+                            return { ...s, rollNumber: newRoll !== undefined ? newRoll : (s.rollNumber || '') };
                           });
                         handleSaveRollNumbers(updated);
+                        setRollNumberChanges({}); // Clear after save
                       }}
                       className="btn-primary px-8 py-3"
                     >
@@ -4081,7 +4103,7 @@ const AcademicPlanner = ({ currentUser, showModal }: any) => {
           <h2 className="text-2xl font-black text-white tracking-tighter uppercase">Academic Planner 2026-27</h2>
           <p className="text-slate-400 text-sm font-medium">Annual Academic Calendar & Holiday List</p>
         </div>
-        {currentUser?.role === 'admin' && (
+        {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
           <button 
             onClick={handleGoogleCalendarSync}
             className="flex items-center gap-2 bg-white text-slate-900 px-4 py-2 rounded-full font-bold text-sm hover:bg-slate-100 transition-all shadow-lg"
@@ -4133,7 +4155,7 @@ const AcademicPlanner = ({ currentUser, showModal }: any) => {
                           <span className={`text-[10px] font-bold tracking-tighter ${sunday ? 'text-rose-500' : 'text-slate-600'}`}>
                             {dayName}
                           </span>
-                          {currentUser?.role === 'admin' && (
+                          {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                 onClick={() => {
@@ -4160,7 +4182,7 @@ const AcademicPlanner = ({ currentUser, showModal }: any) => {
                           )}
                         </div>
                         
-                        {plannerForm.date === `${m.year}-${String(m.monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` && currentUser?.role === 'admin' && (
+                        {plannerForm.date === `${m.year}-${String(m.monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` && (currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
                           <div className="absolute inset-0 z-10 bg-slate-800 p-2 border border-indigo-500 rounded shadow-xl">
                             <div className="space-y-1">
                               <input 
@@ -5347,7 +5369,10 @@ const FeeManagement = ({
               <button 
                 onClick={() => {
                   if (!selectedLedgerStudent) return;
-                  const studentFees = feeMaster.filter(f => f.class === selectedLedgerStudent.class);
+                  const studentFees = feeMaster.filter(f => 
+                    f.class === selectedLedgerStudent.class &&
+                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                  );
                   const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                   const ledgerData = [
                     ...studentFees.map(f => ({
@@ -5379,7 +5404,10 @@ const FeeManagement = ({
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {(() => {
-                  const studentFees = feeMaster.filter(f => f.class === selectedLedgerStudent.class);
+                  const studentFees = feeMaster.filter(f => 
+                    f.class === selectedLedgerStudent.class &&
+                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                  );
                   const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                   
                   const totalAssigned = studentFees.reduce((sum, f) => sum + f.amount, 0);
@@ -5430,7 +5458,10 @@ const FeeManagement = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
-                        const studentFees = feeMaster.filter(f => f.class === selectedLedgerStudent.class);
+                        const studentFees = feeMaster.filter(f => 
+                          f.class === selectedLedgerStudent.class &&
+                          (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                        );
                         const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                         
                         const ledgerItems = [
@@ -6218,12 +6249,14 @@ const TeacherPanel = ({
   students,
   feeTransactions,
   attendance,
+  setAttendance,
   getStudentDueFees,
   formatDate,
   examSchedules,
   examResults,
   setView,
-  schoolProfile
+  schoolProfile,
+  supabase
 }: any) => {
   const assignedClasses = teacherAssignments.filter((a: any) => 
     a.classTeacher === currentUser.name || a.subjectTeachers.some((st: any) => st.teacher === currentUser.name)
@@ -6241,7 +6274,7 @@ const TeacherPanel = ({
     a.teacherName === currentUser.name || assignedClasses.some(ac => ac.class === a.class && ac.section === a.section)
   );
 
-  const [activeTab, setActiveTab] = useState<'class-360' | 'academics' | 'student-list' | 'exams' | 'leaves' | 'messages' | 'profile' | 'notifications'>('class-360');
+  const [activeTab, setActiveTab] = useState<'class-360' | 'attendance' | 'academics' | 'student-list' | 'exams' | 'leaves' | 'messages' | 'profile' | 'notifications'>('class-360');
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showExamModal, setShowExamModal] = useState(false);
@@ -6352,6 +6385,7 @@ const TeacherPanel = ({
       <div className="flex flex-wrap gap-2 border-b border-slate-200">
         {[
           { id: 'class-360', label: 'Class 360', icon: Users },
+          { id: 'attendance', label: 'Attendance', icon: UserCheck },
           { id: 'academics', label: 'Academics', icon: BookOpen },
           { id: 'student-list', label: 'Student List', icon: Users },
           { id: 'exams', label: 'Examination', icon: FileEdit },
@@ -6379,7 +6413,13 @@ const TeacherPanel = ({
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold">Class 360 Overview</h3>
-            <button onClick={() => setView('class-360')} className="btn-primary text-xs">Open Full View</button>
+            <div className="flex items-center gap-4">
+              <div className="px-4 py-2 bg-primary/10 rounded-xl border border-primary/20">
+                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Assigned Classes</p>
+                <p className="text-sm font-bold text-text-heading">{assignedClasses.map(ac => `${ac.class}-${ac.section}`).join(', ')}</p>
+              </div>
+              <button onClick={() => setView('class-360')} className="btn-primary text-xs">Open Full View</button>
+            </div>
           </div>
           <Class360View 
             students={students}
@@ -6392,6 +6432,26 @@ const TeacherPanel = ({
             examSchedules={examSchedules}
             examResults={examResults}
             currentUser={currentUser}
+          />
+        </div>
+      )}
+
+      {activeTab === 'attendance' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold">Student Attendance</h3>
+            <div className="px-4 py-2 bg-primary/10 rounded-xl border border-primary/20">
+              <p className="text-[10px] font-black text-primary uppercase tracking-widest">Your Assigned Classes</p>
+              <p className="text-sm font-bold text-text-heading">{assignedClasses.map(ac => `${ac.class}-${ac.section}`).join(', ')}</p>
+            </div>
+          </div>
+          <Attendance 
+            students={students}
+            attendance={attendance}
+            setAttendance={setAttendance}
+            masterData={masterData}
+            currentUser={currentUser}
+            supabase={supabase}
           />
         </div>
       )}
@@ -7094,7 +7154,7 @@ const TeacherPanel = ({
   );
 };
 
-const ParentPanel = ({ students, examResults, examSchedules, reportCards, reportCardTemplates, homeworks, syllabuses, leaveRequests, setLeaveRequests, notifications, feeTransactions, feeMaster, currentUser }: any) => {
+const StudentPanel = ({ students, examResults, examSchedules, reportCards, reportCardTemplates, homeworks, syllabuses, leaveRequests, setLeaveRequests, notifications, feeTransactions, feeMaster, currentUser }: any) => {
   const [activeTab, setActiveTab] = useState<'progress' | 'homework' | 'fees' | 'exams'>('progress');
   const [showHomeworkUploadModal, setShowHomeworkUploadModal] = useState(false);
   const [selectedHomeworkForUpload, setSelectedHomeworkForUpload] = useState<any>(null);
@@ -7174,12 +7234,20 @@ const ParentPanel = ({ students, examResults, examSchedules, reportCards, report
   };
 
   const getDueFees = () => {
-    const classFee = feeMaster.find((f: any) => f.class === myStudent.class);
-    if (!classFee) return 0;
+    const studentFees = feeMaster.filter((f: any) => 
+      f.class === myStudent.class && 
+      (!f.studentType || f.studentType === 'Both' || f.studentType === myStudent.studentType)
+    );
+    if (studentFees.length === 0) return 0;
+    
     const paid = feeTransactions
       .filter((t: any) => t.studentId === myStudent.studentId)
       .reduce((sum: number, t: any) => sum + t.totalPaid, 0);
-    const total = classFee.frequency === 'Monthly' ? classFee.amount * 12 : classFee.amount;
+    
+    const total = studentFees.reduce((sum: number, f: any) => {
+      return sum + (f.frequency === 'Monthly' ? f.amount * 12 : f.amount);
+    }, 0);
+    
     return Math.max(0, total - paid);
   };
 
@@ -7402,30 +7470,58 @@ const ParentPanel = ({ students, examResults, examSchedules, reportCards, report
 
       {activeTab === 'fees' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="flex flex-col items-center justify-center p-12 text-center space-y-6">
-            <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center">
-              <Wallet size={40} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-1">Total Due Fees</p>
-              <h2 className="text-4xl font-black text-text-heading">₹{getDueFees().toLocaleString()}</h2>
-            </div>
-            <div className="w-full pt-6 border-t border-slate-100">
-              <button 
-                onClick={handlePayFee}
-                disabled={isPaying || getDueFees() === 0}
-                className="btn-primary w-full py-4 mb-6 flex items-center justify-center gap-2"
-              >
-                {isPaying ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <CreditCard size={20} />}
-                {isPaying ? 'Processing...' : 'Pay Now Online'}
-              </button>
-              <p className="text-sm font-bold text-text-heading mb-4">Or Scan QR to Pay via UPI</p>
-              <div className="bg-white p-4 rounded-2xl border-2 border-primary/20 inline-block">
-                <QrCode size={160} className="text-primary" />
+          <div className="space-y-8">
+            <Card className="flex flex-col items-center justify-center p-12 text-center space-y-6">
+              <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center">
+                <Wallet size={40} />
               </div>
-              <p className="text-[10px] text-text-sub mt-4 font-medium italic">Supports all UPI apps (GPay, PhonePe, Paytm)</p>
-            </div>
-          </Card>
+              <div>
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-1">Total Due Fees</p>
+                <h2 className="text-4xl font-black text-text-heading">₹{getDueFees().toLocaleString()}</h2>
+              </div>
+              <div className="w-full pt-6 border-t border-slate-100">
+                <button 
+                  onClick={handlePayFee}
+                  disabled={isPaying || getDueFees() === 0}
+                  className="btn-primary w-full py-4 mb-6 flex items-center justify-center gap-2"
+                >
+                  {isPaying ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <CreditCard size={20} />}
+                  {isPaying ? 'Processing...' : 'Pay Now Online'}
+                </button>
+                <p className="text-sm font-bold text-text-heading mb-4">Or Scan QR to Pay via UPI</p>
+                <div className="bg-white p-4 rounded-2xl border-2 border-primary/20 inline-block">
+                  <QrCode size={160} className="text-primary" />
+                </div>
+                <p className="text-[10px] text-text-sub mt-4 font-medium italic">Supports all UPI apps (GPay, PhonePe, Paytm)</p>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
+                <Receipt size={20} /> Assigned Fee Structure
+              </h3>
+              <div className="space-y-4">
+                {feeMaster.filter((f: any) => 
+                  f.class === myStudent.class && 
+                  (!f.studentType || f.studentType === 'Both' || f.studentType === myStudent.studentType)
+                ).map((f: any) => (
+                  <div key={f.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="font-bold">{f.feeType}</p>
+                      <p className="text-xs text-text-sub">{f.frequency}</p>
+                    </div>
+                    <p className="font-black text-primary">₹{f.amount.toLocaleString()}</p>
+                  </div>
+                ))}
+                {feeMaster.filter((f: any) => 
+                  f.class === myStudent.class && 
+                  (!f.studentType || f.studentType === 'Both' || f.studentType === myStudent.studentType)
+                ).length === 0 && (
+                  <p className="text-center py-8 text-text-sub italic">No fee structure assigned for your class.</p>
+                )}
+              </div>
+            </Card>
+          </div>
           <Card>
             <h3 className="text-lg font-bold mb-6">Transaction History</h3>
             <div className="space-y-4">
@@ -11611,15 +11707,21 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
 };
 
 const downloadAPK = (type: 'student' | 'staff') => {
+  // Create a dummy APK content (just a ZIP header as APKs are ZIP files)
+  const dummyContent = new Uint8Array([0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+  const blob = new Blob([dummyContent], { type: 'application/vnd.android.package-archive' });
+  const url = URL.createObjectURL(blob);
+  
   const link = document.createElement('a');
-  link.href = '#'; // In a real app, this would be the URL to the APK file
+  link.href = url;
   link.download = type === 'student' ? 'Subrai_Mission_Student.apk' : 'Subrai_Mission_Staff.apk';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
   
   // For demonstration in this environment, we also show a toast/alert
-  alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated.`);
+  alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated. \n\nNote: This is a placeholder file. For a production app, you must build the APK using Android Studio and host the file on a secure server.`);
 };
 
 const SuperAdminPanel = ({ users, setUsers }: any) => {
@@ -12761,7 +12863,7 @@ export default function App() {
         setCurrentUser(formattedUser);
         if (formattedUser.role === 'admin' || formattedUser.role === 'super-admin') setView('dashboard');
         else if (formattedUser.role === 'teacher') setView('teacher-panel');
-        else if (formattedUser.role === 'parent') setView('parent-panel');
+        else if (formattedUser.role === 'student' || formattedUser.role === 'parent') setView('student-panel');
         else if (formattedUser.role === 'warden') setView('hostel');
         else setView('dashboard');
         return;
@@ -12776,7 +12878,7 @@ export default function App() {
       setCurrentUser(user);
       if (user.role === 'admin' || user.role === 'super-admin') setView('dashboard');
       else if (user.role === 'teacher') setView('teacher-panel');
-      else if (user.role === 'parent' || user.role === 'student') setView('parent-panel');
+      else if (user.role === 'parent' || user.role === 'student') setView('student-panel');
       else if (user.role === 'warden') setView('hostel');
       else setView('dashboard');
     } else if (id === schoolProfile.wardenPanelId && (scannedId || loginPassword === schoolProfile.wardenPanelPassword)) {
@@ -12800,7 +12902,7 @@ export default function App() {
         const newUser = { id: id, name: `Parent of ${student.name}`, role: 'parent', studentId: student.studentId, permissions: ['attendance', 'homework', 'syllabus', 'leaves', 'fees'] };
         setUsers([...users, newUser]);
         setCurrentUser(newUser);
-        setView('parent-panel');
+        setView('student-panel');
       } else {
         setLoginError('No student found for this parent ID.');
       }
@@ -12810,7 +12912,7 @@ export default function App() {
       if (student) {
         setLoginError('');
         setCurrentUser({ role: 'student', ...student });
-        setView('dashboard');
+        setView('student-panel');
       } else {
         setLoginError('Invalid ID or Password. Please try again.');
       }
@@ -13498,8 +13600,8 @@ export default function App() {
             <SidebarItem 
               icon={Users} 
               label={isSidebarOpen ? "Student Panel" : ""} 
-              active={view === 'parent-panel'} 
-              onClick={() => setView('parent-panel')} 
+              active={view === 'student-panel'} 
+              onClick={() => setView('student-panel')} 
               isSidebarOpen={isSidebarOpen}
             />
           )}
@@ -14818,13 +14920,14 @@ export default function App() {
                   examResults={examResults}
                   setView={setView}
                   schoolProfile={schoolProfile}
+                  supabase={supabase}
                 />
               </motion.div>
             )}
 
-            {view === 'parent-panel' && (
-              <motion.div key="parent-panel" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <ParentPanel 
+            {view === 'student-panel' && (
+              <motion.div key="student-panel" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <StudentPanel 
                   students={students}
                   examResults={examResults}
                   examSchedules={examSchedules}

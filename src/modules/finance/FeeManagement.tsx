@@ -636,7 +636,11 @@ export const FeeManagement = ({
                     <tbody className="divide-y divide-slate-50">
                       {(() => {
                         const today = new Date();
-                        const studentFees = feeMaster.filter(f => f.class === selectedLedgerStudent.class && f.session === selectedLedgerSession);
+                        const studentFees = feeMaster.filter(f => 
+                          f.class === selectedLedgerStudent.class && 
+                          f.session === selectedLedgerSession &&
+                          (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                        );
                         const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId && t.session === selectedLedgerSession);
                         
                         // Combine and sort by date
