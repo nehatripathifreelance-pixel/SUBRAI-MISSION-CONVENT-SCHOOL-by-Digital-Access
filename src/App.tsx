@@ -11870,21 +11870,48 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
 };
 
 const downloadAPK = (type: 'student' | 'staff') => {
-  // Create a dummy APK content (just a ZIP header as APKs are ZIP files)
-  const dummyContent = new Uint8Array([0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-  const blob = new Blob([dummyContent], { type: 'application/vnd.android.package-archive' });
-  const url = URL.createObjectURL(blob);
+  // We cannot generate a valid binary APK file directly from browser memory.
+  // Instead, we provide the user with the REAL live link to the software.
+  const appUrl = 'https://ais-pre-b7iws4jnem6zktndrktqcp-212916940376.asia-southeast1.run.app';
   
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = type === 'student' ? 'Subrai_Mission_Student.apk' : 'Subrai_Mission_Staff.apk';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const modalHtml = `
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px;">
+      <div style="background: white; border-radius: 24px; max-width: 400px; width: 100%; padding: 32px; text-align: center; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+        <button id="close-apk-modal" style="position: absolute; top: 16px; right: 16px; border: none; background: #f1f5f9; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-weight: bold;">✕</button>
+        
+        <div style="background: #eef2ff; width: 64px; height: 64px; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #4f46e5;">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </div>
+        
+        <h2 style="font-weight: 900; font-size: 20px; margin-bottom: 8px; color: #1e293b; text-transform: uppercase; letter-spacing: -0.025em;">Install Mobile App</h2>
+        <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Scan this QR code with your phone to open the official <b>Subrai Mission</b> app instantly.</p>
+        
+        <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 20px; display: inline-block; margin-bottom: 24px;">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 180px; height: 180px; display: block;" />
+        </div>
+        
+        <div style="background: #f8fafc; padding: 16px; border-radius: 16px; text-align: left; margin-bottom: 24px;">
+          <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Instructions:</p>
+          <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
+            <li>Open the link on your mobile browser.</li>
+            <li>Tap theブラウザ「...」or "Share" button.</li>
+            <li>Select <b>"Add to Home Screen"</b>.</li>
+          </ul>
+        </div>
+        
+        <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #4f46e5; color: white; text-decoration: none; padding: 16px; border-radius: 16px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s;">Open App Link</a>
+      </div>
+    </div>
+  `;
   
-  // For demonstration in this environment, we also show a toast/alert
-  alert(`${type === 'student' ? 'Student/Parent' : 'Staff/Teacher'} APK download initiated. \n\nNote: This is a placeholder file. For a production app, you must build the APK using Android Studio and host the file on a secure server.`);
+  const div = document.createElement('div');
+  div.id = 'apk-pwa-modal';
+  div.innerHTML = modalHtml;
+  document.body.appendChild(div);
+  
+  document.getElementById('close-apk-modal')?.addEventListener('click', () => {
+    document.body.removeChild(div);
+  });
 };
 
 const SuperAdminPanel = ({ users, setUsers }: any) => {
@@ -13411,7 +13438,7 @@ export default function App() {
               .update({ status: 'Converted' })
               .eq('id', formData.enquiryId);
             
-            setEnquiries(enquiries.map((e: AdmissionEnquiry) => 
+            setAdmissionEnquiries(admissionEnquiries.map((e: AdmissionEnquiry) => 
               e.id === formData.enquiryId ? { ...e, status: 'Converted' } : e
             ));
           }
