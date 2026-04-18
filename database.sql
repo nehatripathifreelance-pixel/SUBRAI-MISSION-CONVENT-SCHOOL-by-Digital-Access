@@ -40,9 +40,11 @@ CREATE TABLE IF NOT EXISTS students (
     allergy TEXT,
     has_disability BOOLEAN DEFAULT FALSE,
     disability_details TEXT,
-    relation_in_school JSONB DEFAULT '[]',
+    relations JSONB DEFAULT '[]',
     
     -- Documents (Base64 or URLs)
+    photo_url TEXT,
+    documents JSONB DEFAULT '[]',
     photo TEXT,
     roll_number TEXT,
     aadhaar_card_doc TEXT,
@@ -183,20 +185,51 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS hostel_rooms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hostel_name TEXT NOT NULL,
-    room_no TEXT NOT NULL,
-    room_type TEXT,
-    capacity INTEGER,
-    occupied INTEGER DEFAULT 0,
-    cost_per_bed NUMERIC(10,2),
+    room_number TEXT NOT NULL,
+    floor TEXT,
+    room_type TEXT, -- AC / Non-AC
+    capacity INTEGER DEFAULT 4,
+    gender TEXT, -- Male / Female
+    category TEXT, -- Standard / Deluxe
+    price_per_month NUMERIC(10,2) DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hostel_beds (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    room_id UUID REFERENCES hostel_rooms(id) ON DELETE CASCADE,
+    bed_number TEXT NOT NULL,
+    status TEXT DEFAULT 'Available', -- Available, Occupied, Maintenance
+    student_id TEXT, -- References studentId, not UUID
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hostel_staff (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    role TEXT NOT NULL, -- Warden, Assistant Warden, Security, Cleaning Staff
+    mobile TEXT,
+    email TEXT,
+    shift TEXT, -- Day / Night
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hostel_attendance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id TEXT NOT NULL,
+    student_name TEXT,
+    room_number TEXT,
+    attendance_date DATE DEFAULT CURRENT_DATE,
+    status TEXT NOT NULL, -- Present, Absent, Late, Leave
+    ip_address TEXT,
+    location TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hostel_registrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id TEXT NOT NULL,
-    hostel_name TEXT NOT NULL,
-    room_no TEXT NOT NULL,
+    room_id UUID REFERENCES hostel_rooms(id),
     registration_date DATE DEFAULT CURRENT_DATE,
     status TEXT DEFAULT 'Active',
     created_at TIMESTAMPTZ DEFAULT NOW()

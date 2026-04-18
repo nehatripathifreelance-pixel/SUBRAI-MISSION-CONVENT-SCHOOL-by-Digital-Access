@@ -1,6 +1,6 @@
 {
-  "name": "Remix: New SUBRAI MISSION CONVENT SCHOOL by Digital Access",
-  "description": "A modern, student-friendly school management software powered by JOSHODA. Now featuring advanced report card management for teachers and parents.",
+  "name": "Subrai Mission Convent School",
+  "description": "A modern, student-friendly school management software powered by Digital Access. Featuring advanced report card management, attendance, and identification modules.",
   "requestFramePermissions": [
     "camera",
     "geolocation"

@@ -885,6 +885,32 @@ const SidebarItem = ({
   </button>
 );
 
+const playBeep = () => {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.01);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.2);
+
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  } catch (error) {
+    console.warn('Audio beep failed:', error);
+  }
+};
+
 const Card = ({ children, className = "", ...props }: { children: React.ReactNode, className?: string, [key: string]: any }) => {
   const hasBg = className.includes('bg-');
   return (
@@ -1551,6 +1577,44 @@ const Dashboard = ({
           <div className="space-y-8">
             <Card className="p-6">
               <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <Users size={20} className="text-primary" />
+                My Profile
+              </h3>
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center font-bold text-primary overflow-hidden">
+                  {studentData.photo ? (
+                    <img src={studentData.photo} alt={studentData.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <span className="text-3xl">{studentData.name[0]}</span>
+                  )}
+                </div>
+                <div className="text-center">
+                  <h4 className="font-black text-base uppercase tracking-tighter">{studentData.name} {studentData.surname}</h4>
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest">{studentData.studentId}</p>
+                </div>
+                <div className="w-32 h-32 bg-white border border-slate-200 p-2 rounded-xl mt-2">
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${studentData.studentId || studentData.id}`} 
+                    alt="Student QR" 
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="w-full space-y-2 mt-4 text-xs">
+                   <div className="flex justify-between border-b border-slate-50 pb-2">
+                     <span className="text-text-sub font-bold uppercase tracking-widest text-[8px]">Class</span>
+                     <span className="font-black">{studentData.class} - {studentData.section}</span>
+                   </div>
+                   <div className="flex justify-between border-b border-slate-50 pb-2">
+                     <span className="text-text-sub font-bold uppercase tracking-widest text-[8px]">Roll Number</span>
+                     <span className="font-black">{studentData.rollNumber || 'N/A'}</span>
+                   </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
                 <Bell size={20} className="text-primary" />
                 Notices
               </h3>
@@ -1613,14 +1677,34 @@ const FileUpload = ({ label, icon: Icon = Upload, required = false, onChange, pr
       )}
       <div className={`flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl transition-all overflow-hidden min-h-[120px] ${!isViewOnly ? 'group-hover:border-primary group-hover:bg-primary/5' : 'opacity-80'}`}>
         {preview ? (
-          preview.startsWith('data:application/pdf') ? (
-            <div className="flex flex-col items-center gap-1">
-              <FileText className="text-primary" size={32} />
-              <span className="text-[10px] text-primary font-medium">PDF Document</span>
-            </div>
-          ) : (
-            <img src={preview} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
-          )
+          <div className="flex flex-col items-center gap-2 group/preview relative">
+            {preview.startsWith('data:application/pdf') ? (
+              <div className="flex flex-col items-center gap-1">
+                <FileText className="text-primary" size={32} />
+                <span className="text-[10px] text-primary font-medium">PDF Document</span>
+              </div>
+            ) : (
+              <img src={preview} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
+            )}
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const win = window.open();
+                if (win) {
+                  if (preview.startsWith('data:application/pdf')) {
+                    win.document.write(`<iframe src="${preview}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                  } else {
+                    win.document.write(`<img src="${preview}" style="max-width: 100%; height: auto;" />`);
+                  }
+                  win.document.close();
+                }
+              }}
+              className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center rounded-lg transition-opacity z-20"
+            >
+              <Eye className="text-white" size={20} />
+            </button>
+          </div>
         ) : (
           <>
             <Icon className="text-slate-400" size={24} />
@@ -1729,26 +1813,6 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       console.error("Camera error:", err);
       alert("Could not access camera for photo capture");
       return null;
-    }
-  };
-
-  const playBeep = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.1);
-    } catch (e) {
-      console.error("Audio error:", e);
     }
   };
 
@@ -3166,6 +3230,11 @@ const Academics = ({
         .from('students')
         .upsert(updatedStudents.map(s => ({
           id: s.id,
+          student_id: s.studentId,
+          first_name: s.name,
+          surname: s.surname,
+          class_name: s.class,
+          section_name: s.section,
           roll_number: s.rollNumber
         })), { onConflict: 'id' });
 
@@ -4266,7 +4335,8 @@ const FeeManagement = ({
   masterData,
   showModal,
   leaveRequests,
-  getStudentDueFees
+  getStudentDueFees,
+  hostelBeds
 }: any) => {
   const [activeTab, setActiveTab] = useState<'collect' | 'master' | 'reports' | 'ledger' | 'bank-cash' | 'adjustment-logs'>('collect');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -4431,6 +4501,8 @@ const FeeManagement = ({
   });
 
   const getMonthlyDuesBreakdown = (student: any, month: string) => {
+    if (!student) return {};
+    const isHosteller = hostelBeds.some((bed: any) => bed.studentId === student.studentId && bed.status === 'Occupied');
     const academicYearStartMonth = 'April';
     const quarterlyMonths = ['April', 'July', 'October', 'January'];
     const halfYearlyMonths = ['April', 'October'];
@@ -4438,6 +4510,7 @@ const FeeManagement = ({
     const classFees = feeMaster.filter((f: any) => {
       if (f.class !== student.class) return false;
       if (f.studentType && f.studentType !== 'Both' && f.studentType !== student.studentType) return false;
+      if (f.feeType === 'Hostel Fee' && !isHosteller) return false;
 
       // Filter by frequency and month
       if (f.frequency === 'Monthly') return true;
@@ -4472,9 +4545,11 @@ const FeeManagement = ({
     const quarterlyMonths = ['April', 'July', 'October', 'January'];
     const halfYearlyMonths = ['April', 'October'];
 
+    const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedStudent.studentId && bed.status === 'Occupied');
     const monthlyFees = feeMaster.filter((f: any) => {
       if (f.class !== selectedStudent.class) return false;
       if (f.studentType && f.studentType !== 'Both' && f.studentType !== selectedStudent.studentType) return false;
+      if (f.feeType === 'Hostel Fee' && !isHosteller) return false;
 
       // Filter by frequency and month
       if (f.frequency === 'Monthly') return true;
@@ -5369,26 +5444,45 @@ const FeeManagement = ({
               <button 
                 onClick={() => {
                   if (!selectedLedgerStudent) return;
+                  const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
                   const studentFees = feeMaster.filter(f => 
                     f.class === selectedLedgerStudent.class &&
-                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
+                    (f.feeType !== 'Hostel Fee' || isHosteller)
                   );
                   const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
-                  const ledgerData = [
-                    ...studentFees.map(f => ({
+                  const ledgerExportData: any[] = [];
+                  
+                  studentFees.forEach(f => {
+                    ledgerExportData.push({
                       Date: 'Session Start',
                       Particulars: `Fee Assigned: ${f.feeType}`,
                       Type: 'Debit',
-                      Amount: f.amount
-                    })),
-                    ...studentTransactions.map(t => ({
+                      Debit: f.amount,
+                      Credit: 0
+                    });
+                  });
+
+                  studentTransactions.forEach(t => {
+                    if (t.fine > 0) {
+                      ledgerExportData.push({
+                        Date: t.date,
+                        Particulars: 'Late Fine Applied',
+                        Type: 'Debit',
+                        Debit: t.fine,
+                        Credit: 0
+                      });
+                    }
+                    ledgerExportData.push({
                       Date: t.date,
-                      Particulars: `Fee Paid: ${t.feeType} (Inv: ${t.id})`,
+                      Particulars: `Fee Paid: ${t.feeType} (${t.paymentMode})`,
                       Type: 'Credit',
-                      Amount: t.totalPaid
-                    }))
-                  ];
-                  const ws = XLSX.utils.json_to_sheet(ledgerData);
+                      Debit: 0,
+                      Credit: t.totalPaid + (t.discount || 0) + (t.scholarship || 0)
+                    });
+                  });
+
+                  const ws = XLSX.utils.json_to_sheet(ledgerExportData);
                   const wb = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(wb, ws, "Ledger");
                   XLSX.writeFile(wb, `${selectedLedgerStudent.name}_Ledger.xlsx`);
@@ -5458,21 +5552,42 @@ const FeeManagement = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
+                        const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
                         const studentFees = feeMaster.filter(f => 
                           f.class === selectedLedgerStudent.class &&
-                          (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                          (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
+                          (f.feeType !== 'Hostel Fee' || isHosteller)
                         );
                         const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                         
-                        const ledgerItems = [
-                          ...studentFees.map(f => ({
+                        const ledgerItems: any[] = [];
+                        
+                        // Add base fees
+                        studentFees.forEach(f => {
+                          ledgerItems.push({
                             date: '2024-04-01', // Session start
                             particulars: `Fee Assigned: ${f.feeType} (${f.frequency})`,
                             type: 'Debit',
                             amount: f.amount,
                             isDebit: true
-                          })),
-                          ...studentTransactions.map(t => ({
+                          });
+                        });
+
+                        // Add transactions and associated fines
+                        studentTransactions.forEach(t => {
+                          // Debit the fine first if it exists
+                          if (t.fine > 0) {
+                            ledgerItems.push({
+                              date: t.date,
+                              particulars: `Late Fine Applied (${t.period || 'Period'})`,
+                              type: 'Debit',
+                              amount: t.fine,
+                              isDebit: true
+                            });
+                          }
+
+                          // Credit the payment
+                          ledgerItems.push({
                             date: t.date,
                             particulars: `Fee Paid: ${t.feeType} (Mode: ${t.paymentMode})`,
                             breakdown: t.breakdown,
@@ -5481,10 +5596,17 @@ const FeeManagement = ({
                             isDebit: false,
                             paidOnly: t.totalPaid,
                             discount: (t.discount || 0) + (t.scholarship || 0)
-                          }))
-                        ].sort((a, b) => {
-                          if (a.date === '2024-04-01') return -1;
-                          if (b.date === '2024-04-01') return 1;
+                          });
+                        });
+
+                        ledgerItems.sort((a, b) => {
+                          if (a.date === '2024-04-01' && b.date !== '2024-04-01') return -1;
+                          if (b.date === '2024-04-01' && a.date !== '2024-04-01') return 1;
+                          if (a.date === b.date) {
+                            // On same date, debits come before credits (to show logic of fine applied then paid)
+                            if (a.isDebit && !b.isDebit) return -1;
+                            if (b.isDebit && !a.isDebit) return 1;
+                          }
                           return new Date(a.date).getTime() - new Date(b.date).getTime();
                         });
 
@@ -6092,26 +6214,39 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
              id="printable-receipt"
            >
              <style>{`
+               @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&display=swap');
                @media print {
                  body * { visibility: hidden; }
                  #printable-receipt, #printable-receipt * { visibility: visible; }
                  #printable-receipt {
                    position: absolute !important;
                    left: 0 !important;
-                   top: 0 !important;
+                   top: 2mm !important;
                    width: ${printSize === '58mm' ? '58mm' : '148mm'} !important;
                    box-shadow: none !important;
-                   padding: ${printSize === '58mm' ? '2mm' : '10mm'} !important;
+                   padding: ${printSize === '58mm' ? '1mm' : '10mm'} !important;
                    margin: 0 !important;
                  }
                  .no-print { display: none !important; }
                }
+               .circled-font {
+                 font-family: 'Comfortaa', cursive;
+                 font-weight: 700;
+                 display: inline-block;
+                 padding: 4px 10px;
+                 border: 1.5px solid #1e293b;
+                 border-radius: 999px;
+                 margin-bottom: 4px;
+                 white-space: nowrap;
+               }
              `}</style>
              
              <div className="text-center mb-4 pt-4">
-               <h1 className="font-black uppercase text-lg leading-normal">{schoolProfile.name}</h1>
-               <p className="italic text-xs">{schoolProfile.tagline}</p>
-               <p className="text-[10px] mt-1">{schoolProfile.address}</p>
+               <div className="mb-2">
+                 <h1 className={`${printSize === '58mm' ? 'text-[10px]' : 'text-sm'} circled-font uppercase leading-tight`}>{schoolProfile.name}</h1>
+               </div>
+               <p className="italic text-[10px] font-bold">{schoolProfile.tagline}</p>
+               <p className="text-[9px] mt-1 font-bold">{schoolProfile.address}</p>
              </div>
              
              <div className="border-t border-dashed border-slate-400 my-2"></div>
@@ -6531,8 +6666,16 @@ const TeacherPanel = ({
               <p className="text-sm font-bold text-primary uppercase tracking-widest mt-1">{currentUser.designation || 'Senior Teacher'}</p>
               <div className="mt-6 w-full space-y-3">
                 <div className="flex justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <span className="text-xs font-bold text-text-sub uppercase">Employee ID</span>
-                  <span className="text-sm font-bold">{currentUser.id || 'TCH-2024-001'}</span>
+                  <span className="text-xs font-bold text-text-sub uppercase">ID Number</span>
+                  <span className="text-sm font-bold">{currentUser.staffId || currentUser.studentId || currentUser.id || 'TCH-2024-001'}</span>
+                </div>
+                <div className="flex justify-center p-3 bg-white rounded-xl border border-slate-100">
+                   <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${currentUser.staffId || currentUser.studentId || currentUser.id}`} 
+                    alt="My QR" 
+                    className="w-32 h-32 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div className="flex justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <span className="text-xs font-bold text-text-sub uppercase">Role</span>
@@ -8440,6 +8583,7 @@ const StaffAttendanceModule = ({ staff, staffAttendance, setStaffAttendance, cur
 
   const handleScan = (decodedText: string) => {
     if (decodedText === schoolAttendanceToken) {
+      playBeep();
       markAttendance();
     } else {
       setScanStatus('error');
@@ -9396,12 +9540,11 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         await supabase
           .from('users')
           .insert([{
-            id: staffId,
             username: staffId,
             name: `${newStaff.name} ${newStaff.surname}`,
             password: newStaff.password || '123',
             role: newStaff.role?.toLowerCase(),
-            permissions: []
+            permissions: newStaff.role?.toLowerCase() === 'teacher' ? ['attendance', 'homework', 'syllabus', 'leaves'] : []
           }]);
 
         const staffMember: Staff = {
@@ -9508,6 +9651,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                   <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Department</th>
                   <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Designation</th>
                   <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Mobile</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">QR Code</th>
                   <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
                   <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Action</th>
                 </tr>
@@ -9515,7 +9659,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
               <tbody className="divide-y divide-slate-50">
                 {staff.map((s: Staff) => (
                   <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-4 text-sm font-bold text-primary">{s.id}</td>
+                    <td className="py-4 px-4 text-sm font-bold text-primary">{s.staffId || s.id}</td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs overflow-hidden">
@@ -9529,6 +9673,16 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                     <td className="py-4 px-4 text-sm text-text-sub">{s.designation}</td>
                     <td className="py-4 px-4 text-sm text-text-sub">{s.mobile}</td>
                     <td className="py-4 px-4">
+                      <div className="w-10 h-10 bg-white border border-slate-200 p-1 rounded-lg">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${s.staffId || s.id}`} 
+                          alt="QR" 
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-sm text-text-sub">
                       <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
                         s.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                       }`}>
@@ -10517,31 +10671,23 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
   };
 
   const handleApproveForAdmission = async (enquiry: AdmissionEnquiry) => {
-    const { error } = await supabase
-      .from('enquiries')
-      .update({ status: 'Converted' })
-      .eq('id', enquiry.id);
+    // We only set the form data and switch view. 
+    // The "Converted" status will be set in handleRegister after success.
+    setFormData({
+      enquiryId: enquiry.id, // Track which enquiry is being converted
+      name: enquiry.name,
+      surname: enquiry.surname || '',
+      mobile: enquiry.mobile,
+      email: enquiry.email || '',
+      class: enquiry.class,
+      fatherName: enquiry.fatherName || '',
+      motherName: enquiry.motherName || '',
+      address: enquiry.address || '',
+      gender: enquiry.gender || '',
+      fatherMobile: enquiry.mobile
+    });
 
-    if (!error) {
-      setEnquiries(enquiries.map((e: AdmissionEnquiry) => 
-        e.id === enquiry.id ? { ...e, status: 'Converted' } : e
-      ));
-
-      setFormData({
-        name: enquiry.name,
-        surname: enquiry.surname || '',
-        mobile: enquiry.mobile,
-        email: enquiry.email || '',
-        class: enquiry.class,
-        fatherName: enquiry.fatherName || '',
-        motherName: enquiry.motherName || '',
-        address: enquiry.address || '',
-        gender: enquiry.gender || '',
-        fatherMobile: enquiry.mobile
-      });
-
-      setView('register-student');
-    }
+    setView('register-student');
   };
 
   const handleAddVisitor = async () => {
@@ -11168,9 +11314,10 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
   );
 };
 
-const RoleAssignPanel = ({ users, setUsers }: any) => {
+const RoleAssignPanel = ({ users, setUsers, currentUser }: any) => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const togglePermission = async (permission: string) => {
     if (!selectedUser) return;
@@ -11284,7 +11431,7 @@ const RoleAssignPanel = ({ users, setUsers }: any) => {
               <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary font-black text-3xl">
                 {selectedUser.name[0]}
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-3xl font-black text-text-heading uppercase tracking-tight">{selectedUser.name}</h3>
                 <div className="flex items-center gap-3 mt-1">
                   <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-black uppercase tracking-widest">
@@ -11295,6 +11442,22 @@ const RoleAssignPanel = ({ users, setUsers }: any) => {
                   </span>
                 </div>
               </div>
+              {currentUser?.role === 'super-admin' && (
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                  <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">User Password</p>
+                  <div className="flex items-center gap-3">
+                    <p className="font-mono font-bold text-amber-900">
+                      {showPassword ? (selectedUser.password || '123') : '••••••••'}
+                    </p>
+                    <button 
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="p-1.5 hover:bg-amber-100 rounded-lg transition-all text-amber-600"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-6">
@@ -12001,10 +12164,15 @@ export default function App() {
   const getStudentDueFees = (student: any, session?: string) => {
     if (!student) return 0;
     const targetSession = session || student.session || '2024-25';
+    
+    // Check if student is in hostel
+    const isHosteller = hostelBeds.some(bed => bed.studentId === student.studentId && bed.status === 'Occupied');
+    
     const classFees = feeMaster.filter((f: any) => 
       f.class === student.class && 
       f.session === targetSession &&
-      (f.studentType === 'Both' || !f.studentType || f.studentType === student.studentType)
+      (f.studentType === 'Both' || !f.studentType || f.studentType === student.studentType) &&
+      (f.feeType !== 'Hostel Fee' || isHosteller) // Only include hostel fee if hosteller
     );
     if (classFees.length === 0) return 0;
     
@@ -12024,7 +12192,6 @@ export default function App() {
       let multiplier = 0;
       
       if (f.frequency === 'Yearly') {
-        // Yearly fee appears in the month of admission or session start
         if (today >= new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1)) {
           multiplier = 1;
         }
@@ -12064,16 +12231,16 @@ export default function App() {
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [schoolProfile, setSchoolProfile] = useState<any>({
     name: 'SUBRAI MISSION CONVENT SCHOOL',
-    contact: '+91 9876543210',
-    gst: '22AAAAA0000A1Z5',
-    regNo: 'SCH/2024/001',
-    email: 'info@subraimission.com',
-    currentSession: '2024-25',
+    contact: '+91 9436122607',
+    gst: 'TR/SCH/2024/001',
+    regNo: 'TRUST/2011/SMT',
+    email: 'info@subraimission.org',
+    currentSession: '2025-26',
     sessions: ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28', '2028-29'],
     wardenPanelId: 'warden',
     wardenPanelPassword: 'wardenpassword',
-    address: '123 Education Hub, New Delhi, India',
-    logo: '',
+    address: 'Teliamura, Khowai, Tripura, Pin: 799205',
+    logo: 'https://images.unsplash.com/photo-1594608661623-aa0bd3a67d28?q=80&w=400&auto=format&fit=crop', // Default fallback
     principalSignature: '',
     classTeacherSignature: '',
     schoolStamp: '',
@@ -12292,8 +12459,8 @@ export default function App() {
           disabilityDetails: s.disability_details || '',
           admissionDate: s.admission_date,
           photo: s.photo_url,
-          relationsInSchool: [], // Need to fetch from student_relations
-          documents: [] // Need to fetch from student_documents
+          relationsInSchool: s.relations || [],
+          documents: s.documents || []
         })));
       }
 
@@ -12804,6 +12971,7 @@ export default function App() {
             { facingMode },
             { fps: 10, qrbox: 250 },
             (decodedText) => {
+              playBeep();
               handleLogin(undefined, decodedText);
               html5QrCode?.stop().catch(err => console.error("QR Scanner Stop Error:", err));
             },
@@ -12853,18 +13021,36 @@ export default function App() {
 
       if (user && (scannedId || loginPassword === user.password)) {
         setLoginError('');
-        const formattedUser = {
+        let enrichedUser = {
           ...user,
           id: user.username,
-          name: user.username.charAt(0).toUpperCase() + user.username.slice(1),
+          name: user.name || (user.username.charAt(0).toUpperCase() + user.username.slice(1)),
           role: user.role,
           permissions: user.permissions || []
         };
-        setCurrentUser(formattedUser);
-        if (formattedUser.role === 'admin' || formattedUser.role === 'super-admin') setView('dashboard');
-        else if (formattedUser.role === 'teacher') setView('teacher-panel');
-        else if (formattedUser.role === 'student' || formattedUser.role === 'parent') setView('student-panel');
-        else if (formattedUser.role === 'warden') setView('hostel');
+
+        // Try to find staffId or studentId
+        if (enrichedUser.role === 'teacher' || enrichedUser.role === 'admin' || enrichedUser.role === 'super-admin') {
+          const { data: staffData } = await supabase.from('staff').select('staff_id, name, surname, photo').eq('staff_id', user.username).single();
+          if (staffData) {
+            enrichedUser.staffId = staffData.staff_id;
+            enrichedUser.name = `${staffData.name} ${staffData.surname}`;
+            enrichedUser.photo = staffData.photo;
+          }
+        } else if (enrichedUser.role === 'student' || enrichedUser.role === 'parent') {
+          const { data: studentData } = await supabase.from('students').select('student_id, first_name, surname, photo').eq('student_id', user.username).single();
+          if (studentData) {
+            enrichedUser.studentId = studentData.student_id;
+            enrichedUser.name = `${studentData.first_name} ${studentData.surname}`;
+            enrichedUser.photo = studentData.photo;
+          }
+        }
+
+        setCurrentUser(enrichedUser);
+        if (enrichedUser.role === 'admin' || enrichedUser.role === 'super-admin') setView('dashboard');
+        else if (enrichedUser.role === 'teacher') setView('teacher-panel');
+        else if (enrichedUser.role === 'student' || enrichedUser.role === 'parent') setView('student-panel');
+        else if (enrichedUser.role === 'warden') setView('hostel');
         else setView('dashboard');
         return;
       }
@@ -13031,11 +13217,13 @@ export default function App() {
     const photo = formData.photo;
     const docs = formData.documents || [];
     const hasAadhaar = docs.some((d: any) => d.name === 'Aadhaar Card' && d.file);
+    const hasCaste = docs.some((d: any) => d.name === 'Caste Certificate' && d.file);
     const hasParentsDocs = docs.some((d: any) => d.name === 'Parents Documents' && d.file);
     const hasSignature = docs.some((d: any) => d.name === 'Signature' && d.file);
+    const hasParentsSignature = docs.some((d: any) => d.name === 'Parents Signature' && d.file);
 
-    if (!photo || !hasAadhaar || !hasParentsDocs || !hasSignature) {
-      showModal('Validation Error', 'Please upload all required documents: Photo, Aadhaar Card, Parents Documents, and Signature.');
+    if (!photo || !hasAadhaar || !hasCaste || !hasParentsDocs || !hasSignature || !hasParentsSignature) {
+      showModal('Validation Error', 'Please upload all required documents: Photo, Aadhaar Card, Caste Certificate, Parents Documents, Student Signature, and Parents Signature.');
       return;
     }
 
@@ -13215,6 +13403,18 @@ export default function App() {
             }]);
 
           showModal('Success', `Student Registered Successfully! ID: ${newStudent.studentId}`);
+
+          // Update enquiry status if this was a conversion
+          if (formData.enquiryId && supabase) {
+            await supabase
+              .from('enquiries')
+              .update({ status: 'Converted' })
+              .eq('id', formData.enquiryId);
+            
+            setEnquiries(enquiries.map((e: AdmissionEnquiry) => 
+              e.id === formData.enquiryId ? { ...e, status: 'Converted' } : e
+            ));
+          }
         }
       }
       setEditingStudentId(null);
@@ -13447,12 +13647,18 @@ export default function App() {
             className="shrink-0 hover:scale-110 transition-transform cursor-pointer"
             title="Download Android App"
           >
-            <img 
-              src={schoolProfile.logo || 'https://images.unsplash.com/photo-1594608661623-aa0bd3a67d28?q=80&w=200&auto=format&fit=crop'} 
-              alt="Logo" 
-              className={`${isSidebarOpen ? 'w-12' : 'w-10'} h-auto transition-all`}
-              referrerPolicy="no-referrer"
-            />
+            {schoolProfile.logo ? (
+              <img 
+                src={schoolProfile.logo} 
+                alt="Logo" 
+                className={`${isSidebarOpen ? 'w-12' : 'w-10'} h-auto transition-all object-contain`}
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className={`${isSidebarOpen ? 'w-12 h-12' : 'w-10 h-10'} bg-slate-100 rounded-xl flex items-center justify-center transition-all`}>
+                <School size={isSidebarOpen ? 24 : 20} className="text-primary" />
+              </div>
+            )}
           </button>
           {isSidebarOpen && (
             <div className="overflow-hidden whitespace-nowrap">
@@ -13588,13 +13794,29 @@ export default function App() {
             </>
           )}
           {currentUser?.role === 'teacher' && (
-            <SidebarItem 
-              icon={UserCog} 
-              label={isSidebarOpen ? "Teacher Panel" : ""} 
-              active={view === 'teacher-panel'} 
-              onClick={() => setView('teacher-panel')} 
-              isSidebarOpen={isSidebarOpen}
-            />
+            <>
+              <SidebarItem 
+                icon={UserCog} 
+                label={isSidebarOpen ? "Teacher Panel" : ""} 
+                active={view === 'teacher-panel'} 
+                onClick={() => setView('teacher-panel')} 
+                isSidebarOpen={isSidebarOpen}
+              />
+              <SidebarItem 
+                icon={UserCheck} 
+                label={isSidebarOpen ? "Attendance" : ""} 
+                active={view === 'attendance'} 
+                onClick={() => setView('attendance')} 
+                isSidebarOpen={isSidebarOpen}
+              />
+              <SidebarItem 
+                icon={ClipboardList} 
+                label={isSidebarOpen ? "Examination" : ""} 
+                active={view === 'examination'} 
+                onClick={() => setView('examination')} 
+                isSidebarOpen={isSidebarOpen}
+              />
+            </>
           )}
           {(currentUser?.role === 'parent' || currentUser?.role === 'student') && (
             <SidebarItem 
@@ -13764,12 +13986,18 @@ export default function App() {
               <Menu size={20} />
             </button>
             <div className="flex items-center gap-2 lg:hidden">
-              <img 
-                src={schoolProfile.logo || 'https://images.unsplash.com/photo-1594608661623-aa0bd3a67d28?q=80&w=200&auto=format&fit=crop'} 
-                alt="Logo" 
-                className="w-8 h-8 object-contain"
-                referrerPolicy="no-referrer"
-              />
+              {schoolProfile.logo ? (
+                <img 
+                  src={schoolProfile.logo} 
+                  alt="Logo" 
+                  className="w-8 h-8 object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
+                  <School size={16} className="text-primary" />
+                </div>
+              )}
             </div>
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -14087,6 +14315,13 @@ export default function App() {
                         label="Roll Number" 
                         value={formData.rollNumber || ''}
                         onChange={(e: any) => setFormData({...formData, rollNumber: e.target.value})} 
+                      />
+                      <Input 
+                        label="Student ID" 
+                        placeholder="e.g. DS-123456" 
+                        value={formData.studentId || ''}
+                        onChange={(e: any) => setFormData({...formData, studentId: e.target.value})} 
+                        disabled={!!editingStudentId}
                       />
                       <Select 
                         label="Caste" 
@@ -14510,6 +14745,7 @@ export default function App() {
                         />
                         <FileUpload 
                           label="Caste Certificate" 
+                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Caste Certificate')?.file}
                           onChange={(e: any) => {
@@ -14565,6 +14801,28 @@ export default function App() {
                                 const index = docs.findIndex(d => d.name === 'Signature');
                                 if (index > -1) docs[index].file = compressed;
                                 else docs.push({ name: 'Signature', file: compressed });
+                                setFormData({ ...formData, documents: docs });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        <FileUpload 
+                          label="Parents Signature" 
+                          icon={Signature} 
+                          required 
+                          isViewOnly={isViewOnly}
+                          preview={(formData.documents || []).find((d: any) => d.name === 'Parents Signature')?.file}
+                          onChange={(e: any) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
+                                const docs = [...(formData.documents || [])];
+                                const index = docs.findIndex(d => d.name === 'Parents Signature');
+                                if (index > -1) docs[index].file = compressed;
+                                else docs.push({ name: 'Parents Signature', file: compressed });
                                 setFormData({ ...formData, documents: docs });
                               };
                               reader.readAsDataURL(file);
@@ -14763,7 +15021,7 @@ export default function App() {
                               <td className="py-4">
                                 <div className="w-10 h-10 bg-white border border-slate-200 p-1 rounded-lg">
                                   <img 
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${s.studentId}`} 
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${s.studentId || s.id}`} 
                                     alt="QR" 
                                     className="w-full h-full object-contain"
                                     referrerPolicy="no-referrer"
@@ -15221,7 +15479,7 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <RoleAssignPanel users={users} setUsers={setUsers} />
+                <RoleAssignPanel users={users} setUsers={setUsers} currentUser={currentUser} />
               </motion.div>
             )}
 
@@ -15698,6 +15956,7 @@ export default function App() {
                   showModal={showModal}
                   leaveRequests={leaveRequests}
                   getStudentDueFees={getStudentDueFees}
+                  hostelBeds={hostelBeds}
                 />
               </motion.div>
             )}
@@ -16023,6 +16282,8 @@ const HostelModule = ({
   const [roomForm, setRoomForm] = useState<any>({ roomNumber: '', floor: '', capacity: 4, type: 'Non-AC', gender: 'Male', category: 'Standard', price: 0 });
   const [staffForm, setStaffForm] = useState<any>({ name: '', role: 'Warden', mobile: '', email: '', shift: 'Day' });
   const [enrollForm, setEnrollForm] = useState<any>({ studentId: '', roomId: '', bedId: '' });
+  const [enrollSearch, setEnrollSearch] = useState('');
+  const [enrollClass, setEnrollClass] = useState('');
 
   // Filters
   const [filterClass, setFilterClass] = useState('');
@@ -16049,6 +16310,7 @@ const HostelModule = ({
               qrbox: { width: 250, height: 250 },
             },
             (decodedText: string) => {
+              playBeep();
               handleAttendance(decodedText, 'Present');
               setScanning(false);
             },
@@ -16245,8 +16507,11 @@ const HostelModule = ({
       b.id === enrollForm.bedId ? { ...b, status: 'Occupied', studentId: enrollForm.studentId } : b
     );
     setBeds(updatedBeds);
+    alert('Student enrolled successfully in hostel.');
     setShowEnrollModal(false);
     setEnrollForm({ studentId: '', roomId: '', bedId: '' });
+    setEnrollSearch('');
+    setEnrollClass('');
   };
 
   const getStudentFeeStatus = (studentId: string) => {
@@ -16642,60 +16907,90 @@ const HostelModule = ({
                     </tr>
                   </thead>
                   <tbody className="text-sm">
-                    {beds.filter((b: any) => b.status === 'Occupied').map((bed: any) => {
-                      const student = students.find((s: any) => s.studentId === bed.studentId);
-                      const room = rooms.find((r: any) => r.id === bed.roomId);
-                      const fee = getStudentFeeStatus(student?.studentId);
-                      
-                      if (filterClass && student?.class !== filterClass) return null;
-                      if (filterSection && student?.section !== filterSection) return null;
-                      if (filterSearch && !student?.name.toLowerCase().includes(filterSearch.toLowerCase()) && !student?.studentId.includes(filterSearch)) return null;
-
-                      return (
-                        <tr key={bed.id} className="border-b border-slate-100 hover:bg-slate-50 transition-all">
-                          <td className="py-4 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                                {student?.name[0]}
+                    {students
+                      .filter((s: any) => {
+                        const matchesClass = !filterClass || s.class === filterClass;
+                        const matchesSection = !filterSection || s.section === filterSection;
+                        const matchesSearch = !filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.studentId.includes(filterSearch);
+                        return matchesClass && matchesSection && matchesSearch;
+                      })
+                      .map((student: any) => {
+                        const bed = beds.find((b: any) => b.studentId === student.studentId && b.status === 'Occupied');
+                        const room = bed ? rooms.find((r: any) => r.id === bed.roomId) : null;
+                        const fee = getStudentFeeStatus(student.studentId);
+                        
+                        return (
+                          <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50 transition-all">
+                            <td className="py-4 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                                  {student.name[0]}
+                                </div>
+                                <div>
+                                  <p className="font-bold">{student.name} {student.surname}</p>
+                                  <p className="text-[10px] text-text-secondary">{student.studentId}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-bold">{student?.name} {student?.surname}</p>
-                                <p className="text-[10px] text-text-secondary">{student?.studentId}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-4 px-4 font-medium">{student?.class} - {student?.section}</td>
-                          <td className="py-4 px-4">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-1 bg-slate-100 rounded text-xs font-bold">Room {room?.roomNumber}</span>
-                              <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-bold">Bed {bed.bedNumber.split('-').pop()}</span>
-                            </div>
-                          </td>
-                          <td className="py-4 px-4">
-                            <span className={`font-bold ${fee.color}`}>{fee.status}</span>
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            <button 
-                              onClick={() => {
-                                showModal(
-                                  'Confirm De-enrollment',
-                                  `Are you sure you want to remove ${student?.name} from Room ${room?.roomNumber}, Bed ${bed.bedNumber.split('-').pop()}?`,
-                                  () => {
-                                    const updatedBeds = beds.map((b: HostelBed) => 
-                                      b.id === bed.id ? { ...b, status: 'Available', studentId: undefined } : b
+                            </td>
+                            <td className="py-4 px-4 font-medium">{student.class} - {student.section}</td>
+                            <td className="py-4 px-4">
+                              {bed ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-1 bg-slate-100 rounded text-xs font-bold">Room {room?.roomNumber}</span>
+                                  <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-bold">Bed {bed.bedNumber.split('-').pop()}</span>
+                                </div>
+                              ) : (
+                                <span className="text-text-secondary italic text-xs">Not Enrolled</span>
+                              )}
+                            </td>
+                            <td className="py-4 px-4">
+                              <span className={`font-bold ${fee.color}`}>{fee.status}</span>
+                            </td>
+                            <td className="py-4 px-4 text-right">
+                              {bed ? (
+                                <button 
+                                  onClick={() => {
+                                    showModal(
+                                      'Confirm De-enrollment',
+                                      `Are you sure you want to remove ${student.name} from Room ${room?.roomNumber}, Bed ${bed.bedNumber.split('-').pop()}?`,
+                                      async () => {
+                                        if (supabase) {
+                                          const { error } = await supabase
+                                            .from('hostel_beds')
+                                            .update({ status: 'Available', student_id: null })
+                                            .eq('id', bed.id);
+                                          if (error) {
+                                            alert('Failed to de-enroll student');
+                                            return;
+                                          }
+                                        }
+                                        const updatedBeds = beds.map((b: HostelBed) => 
+                                          b.id === bed.id ? { ...b, status: 'Available', studentId: undefined } : b
+                                        );
+                                        setBeds(updatedBeds);
+                                      }
                                     );
-                                    setBeds(updatedBeds);
-                                  }
-                                );
-                              }}
-                              className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                  }}
+                                  className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all"
+                                  title="De-enroll Student"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => {
+                                    setEnrollForm({ ...enrollForm, studentId: student.studentId });
+                                    setShowEnrollModal(true);
+                                  }}
+                                  className="flex items-center gap-2 text-primary font-bold hover:underline"
+                                >
+                                  <UserPlus size={16} /> Enroll
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -16947,25 +17242,68 @@ const HostelModule = ({
       {showEnrollModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setShowEnrollModal(false)} />
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[32px] p-8 shadow-2xl relative z-10 w-full max-w-md">
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[32px] p-8 shadow-2xl relative z-10 w-full max-w-lg">
             <h3 className="text-2xl font-black text-text-heading mb-6">Assign Bed to Student</h3>
+            
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label-text">Find Student (Name/ID)</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input 
+                      type="text" 
+                      className="input-field pl-10 h-10" 
+                      placeholder="Search registered..." 
+                      value={enrollSearch}
+                      onChange={(e) => setEnrollSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label-text">Class Filter</label>
+                  <select 
+                    className="input-field h-10"
+                    value={enrollClass}
+                    onChange={(e) => setEnrollClass(e.target.value)}
+                  >
+                    <option value="">All Classes</option>
+                    {masterData.classes.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="label-text">Select Student</label>
-                <select className="input-field" value={enrollForm.studentId} onChange={(e) => setEnrollForm({ ...enrollForm, studentId: e.target.value })}>
+                <select 
+                  className="input-field" 
+                  value={enrollForm.studentId} 
+                  onChange={(e) => setEnrollForm({ ...enrollForm, studentId: e.target.value })}
+                >
                   <option value="">Choose Student...</option>
-                  {students.map((s: any) => (
-                    <option key={s.id} value={s.studentId}>{s.name} {s.surname} ({s.studentId})</option>
-                  ))}
+                  {students
+                    .filter((s: any) => {
+                      const isAlreadyEnrolled = beds.some((b: any) => b.studentId === s.studentId && b.status === 'Occupied');
+                      const matchesSearch = !enrollSearch || s.name.toLowerCase().includes(enrollSearch.toLowerCase()) || s.studentId.includes(enrollSearch);
+                      const matchesClass = !enrollClass || s.class === enrollClass;
+                      return !isAlreadyEnrolled && matchesSearch && matchesClass;
+                    })
+                    .map((s: any) => (
+                      <option key={s.id} value={s.studentId}>{s.name} {s.surname} ({s.studentId}) - {s.class}</option>
+                    ))
+                  }
                 </select>
+                <p className="text-[10px] text-text-secondary mt-1 ml-1 font-bold uppercase tracking-widest italic">Only showing students not currently in hostel.</p>
               </div>
+
               <div>
                 <label className="label-text">Select Room</label>
                 <select className="input-field" value={enrollForm.roomId} onChange={(e) => setEnrollForm({ ...enrollForm, roomId: e.target.value, bedId: '' })}>
                   <option value="">Choose Room...</option>
-                  {rooms.map((r: any) => <option key={r.id} value={r.id}>Room {r.roomNumber} ({r.floor} Floor)</option>)}
+                  {rooms.map((r: any) => <option key={r.id} value={r.id}>Room {r.roomNumber} ({r.floor} Floor) - {r.gender} - {r.price}/mo</option>)}
                 </select>
               </div>
+
               {enrollForm.roomId && (
                 <div>
                   <label className="label-text">Select Bed</label>
@@ -16977,6 +17315,7 @@ const HostelModule = ({
                   </select>
                 </div>
               )}
+
               <button 
                 onClick={handleEnrollStudent} 
                 disabled={!enrollForm.studentId || !enrollForm.bedId}
@@ -17041,7 +17380,7 @@ const IDCardsModule = ({
         {orientation === 'landscape' && (
           <div className="mt-4 w-20 h-20 bg-white rounded-xl p-1 shadow-inner">
              <img 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.studentId || person.id || 'TCH-12345'}`} 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.staffId || person.studentId || person.id || 'TCH-12345'}`} 
               alt="QR Code" 
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
@@ -17061,7 +17400,7 @@ const IDCardsModule = ({
             </div>
             <div className="w-20 h-20 bg-white rounded-xl p-2 shadow-sm border border-slate-100 flex items-center justify-center">
               <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.studentId || person.id || 'TCH-12345'}`} 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.staffId || person.studentId || person.id || 'TCH-12345'}`} 
                 alt="QR Code" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
@@ -17083,7 +17422,7 @@ const IDCardsModule = ({
           <div className="w-full space-y-1 bg-slate-50 p-2 rounded-2xl border border-slate-100">
             <div className="flex justify-between items-center">
               <span className="text-[8px] font-bold text-text-secondary uppercase tracking-wider">ID Number</span>
-              <span className="text-[10px] font-black text-text-heading font-mono">{person.studentId || person.id || 'TCH-12345'}</span>
+              <span className="text-[10px] font-black text-text-heading font-mono">{person.staffId || person.studentId || person.id || 'TCH-12345'}</span>
             </div>
             {type !== 'teacher' && (
               <>
