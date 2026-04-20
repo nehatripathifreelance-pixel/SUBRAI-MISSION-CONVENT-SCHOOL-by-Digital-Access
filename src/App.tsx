@@ -7819,15 +7819,17 @@ const StudentPanel = ({ students, examResults, examSchedules, reportCards, repor
         </div>
         <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary overflow-hidden">
-            {myStudent.photo ? (
+            {myStudent?.photo ? (
               <img src={myStudent.photo} alt={myStudent.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              myStudent.name[0]
+              myStudent?.name?.[0] || '?'
             )}
           </div>
           <div className="pr-4">
-            <p className="text-sm font-bold">{myStudent.name}</p>
-            <p className="text-[10px] text-text-sub uppercase font-bold tracking-widest">Class {myStudent.class}-{myStudent.section}</p>
+            <p className="text-sm font-bold">{myStudent?.name || 'Unknown Student'}</p>
+            <p className="text-[10px] text-text-sub uppercase font-bold tracking-widest">
+              {myStudent ? `Class ${myStudent.class}-${myStudent.section}` : 'No Class Assigned'}
+            </p>
           </div>
         </div>
       </div>
@@ -13335,20 +13337,24 @@ export default function App() {
       if (!supabase) return;
 
       // Fetch Users
-      const { data: usersData } = await supabase.from('users').select('*');
-      if (usersData && usersData.length > 0) {
-        const formattedUsers = usersData.map(u => {
-          const username = u.username || u.id || 'unknown';
-          return {
-            ...u,
-            id: username,
-            dbId: u.id,
-            dbUsername: u.username,
-            name: u.name || (username.charAt(0).toUpperCase() + username.slice(1)),
-            permissions: u.permissions || []
-          };
-        });
-        setUsers(formattedUsers);
+      try {
+        const { data: usersData } = await supabase.from('users').select('*');
+        if (usersData && usersData.length > 0) {
+          const formattedUsers = usersData.map(u => {
+            const username = u.username || u.id || 'unknown';
+            return {
+              ...u,
+              id: username,
+              dbId: u.id,
+              dbUsername: u.username,
+              name: u.name || (username ? username.charAt(0).toUpperCase() + username.slice(1) : 'Unknown User'),
+              permissions: u.permissions || []
+            };
+          });
+          setUsers(formattedUsers);
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err);
       }
 
       // Fetch Front Office Data
@@ -13435,22 +13441,22 @@ export default function App() {
       if (profile) {
         setSchoolProfile((prev: any) => ({
           ...prev,
-          name: profile.school_name,
-          contact: profile.contact_number,
-          gst: profile.gst_number,
-          regNo: profile.registration_number,
-          email: profile.school_email,
-          state: profile.state,
-          currentSession: profile.current_academic_session,
-          wardenPanelId: profile.warden_id,
-          wardenPanelPassword: profile.warden_password,
-          address: profile.school_address,
-          logo: profile.school_logo_url,
-          principalSignature: profile.principal_signature_url,
-          classTeacherSignature: profile.class_teacher_signature_url,
-          schoolStamp: profile.official_stamp_url,
-          feeQrUrl: profile.fee_qr_url,
-          feeUpiId: profile.fee_upi_id,
+          name: profile.school_name || prev.name,
+          contact: profile.contact_number || prev.contact,
+          gst: profile.gst_number || prev.gst,
+          regNo: profile.registration_number || prev.regNo,
+          email: profile.school_email || prev.email,
+          state: profile.state || prev.state,
+          currentSession: profile.current_academic_session || prev.currentSession,
+          wardenPanelId: profile.warden_id || prev.wardenPanelId,
+          wardenPanelPassword: profile.warden_password || prev.wardenPanelPassword,
+          address: profile.school_address || prev.address,
+          logo: profile.school_logo_url || prev.logo,
+          principalSignature: profile.principal_signature_url || prev.principalSignature,
+          classTeacherSignature: profile.class_teacher_signature_url || prev.classTeacherSignature,
+          schoolStamp: profile.official_stamp_url || prev.schoolStamp,
+          feeQrUrl: profile.fee_qr_url || prev.feeQrUrl,
+          feeUpiId: profile.fee_upi_id || prev.feeUpiId,
         }));
         setTaxes(profile.tax_percentage || 0);
       }
@@ -13471,48 +13477,52 @@ export default function App() {
       }
 
       // Fetch Students
-      const { data: studentsData } = await supabase.from('students').select('*');
-      if (studentsData) {
-        setStudents(studentsData.map((s: any) => ({
-          id: s.id,
-          studentId: s.student_id,
-          title: s.title,
-          name: s.first_name,
-          surname: s.surname,
-          studentType: s.student_type,
-          session: s.academic_session,
-          class: s.class_name,
-          section: s.section_name,
-          rollNumber: s.roll_number,
-          caste: s.caste,
-          category: s.category,
-          religion: s.religion,
-          gender: s.gender,
-          dob: s.date_of_birth,
-          bloodGroup: s.blood_group,
-          email: s.email,
-          aadhaarNumber: s.aadhaar_number,
-          panNumber: s.pan_number,
-          passportNumber: s.passport_number,
-          fatherName: s.father_name,
-          motherName: s.mother_name,
-          fatherMobile: s.father_mobile,
-          motherMobile: s.mother_mobile,
-          fatherIncome: s.father_income,
-          fatherSourceOfIncome: s.father_source_of_income,
-          motherIncome: s.mother_income,
-          motherSourceOfIncome: s.mother_source_of_income,
-          address: s.residential_address,
-          emergencyContact: s.emergency_contact,
-          localGuardianContact: s.local_guardian_contact,
-          allergy: s.allergies,
-          hasDisability: s.disability === 'Yes',
-          disabilityDetails: s.disability_details || '',
-          admissionDate: s.admission_date,
-          photo: s.photo_url,
-          relationsInSchool: s.relations || [],
-          documents: s.documents || []
-        })));
+      try {
+        const { data: studentsData } = await supabase.from('students').select('*');
+        if (studentsData) {
+          setStudents(studentsData.map((s: any) => ({
+            id: s.id,
+            studentId: s.student_id,
+            title: s.title,
+            name: s.first_name,
+            surname: s.surname,
+            studentType: s.student_type,
+            session: s.academic_session,
+            class: s.class_name,
+            section: s.section_name,
+            rollNumber: s.roll_number,
+            caste: s.caste,
+            category: s.category,
+            religion: s.religion,
+            gender: s.gender,
+            dob: s.date_of_birth,
+            bloodGroup: s.blood_group,
+            email: s.email,
+            aadhaarNumber: s.aadhaar_number,
+            panNumber: s.pan_number,
+            passportNumber: s.passport_number,
+            fatherName: s.father_name,
+            motherName: s.mother_name,
+            fatherMobile: s.father_mobile,
+            motherMobile: s.mother_mobile,
+            fatherIncome: s.father_income,
+            fatherSourceOfIncome: s.father_source_of_income,
+            motherIncome: s.mother_income,
+            motherSourceOfIncome: s.mother_source_of_income,
+            address: s.residential_address,
+            emergencyContact: s.emergency_contact,
+            localGuardianContact: s.local_guardian_contact,
+            allergy: s.allergies,
+            hasDisability: s.disability === 'Yes',
+            disabilityDetails: s.disability_details || '',
+            admissionDate: s.admission_date,
+            photo: s.photo_url,
+            relationsInSchool: s.relations || [],
+            documents: s.documents || []
+          })));
+        }
+      } catch (err) {
+        console.error('Error fetching students:', err);
       }
 
       // Fetch Fee Data
@@ -14756,10 +14766,10 @@ export default function App() {
           {isSidebarOpen && (
             <div className="overflow-hidden whitespace-nowrap">
               <h2 className="font-black text-sm leading-tight text-primary tracking-tighter uppercase">
-                {schoolProfile.name.split(' ').slice(0, -1).join(' ')}
+                {(schoolProfile.name || 'Digital Access').split(' ').slice(0, -1).join(' ')}
               </h2>
               <p className="text-[9px] text-secondary font-bold uppercase tracking-widest">
-                {schoolProfile.name.split(' ').slice(-1)}
+                {(schoolProfile.name || 'JOSHODA').split(' ').slice(-1)}
               </p>
             </div>
           )}
@@ -16020,7 +16030,10 @@ export default function App() {
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {students.filter(s => {
-                          const matchesSearch = (s.name + ' ' + s.surname + ' ' + s.studentId).toLowerCase().includes(studentSearchQuery.toLowerCase());
+                          const name = s.name || '';
+                          const surname = s.surname || '';
+                          const studentId = s.studentId || '';
+                          const matchesSearch = (name + ' ' + surname + ' ' + studentId).toLowerCase().includes((studentSearchQuery || '').toLowerCase());
                           const matchesClass = !studentFilterClass || s.class === studentFilterClass;
                           const matchesSection = !studentFilterSection || s.section === studentFilterSection;
                           const matchesType = !studentFilterType || s.studentType === studentFilterType;
@@ -16034,7 +16047,10 @@ export default function App() {
                           </tr>
                         ) : (
                           students.filter(s => {
-                            const matchesSearch = (s.name + ' ' + s.surname + ' ' + s.studentId).toLowerCase().includes(studentSearchQuery.toLowerCase());
+                            const name = s.name || '';
+                            const surname = s.surname || '';
+                            const studentId = s.studentId || '';
+                            const matchesSearch = (name + ' ' + surname + ' ' + studentId).toLowerCase().includes((studentSearchQuery || '').toLowerCase());
                             const matchesClass = !studentFilterClass || s.class === studentFilterClass;
                             const matchesSection = !studentFilterSection || s.section === studentFilterSection;
                             const matchesType = !studentFilterType || s.studentType === studentFilterType;
@@ -16050,7 +16066,7 @@ export default function App() {
                                     {s.photo ? (
                                       <img src={s.photo} alt={s.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                     ) : (
-                                      s.name[0]
+                                      (s.name ? s.name[0] : '?')
                                     )}
                                   </div>
                                   <span className="font-semibold">{s.name} {s.surname}</span>
