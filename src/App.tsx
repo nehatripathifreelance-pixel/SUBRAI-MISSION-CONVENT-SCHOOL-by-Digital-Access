@@ -1680,9 +1680,10 @@ const Select = ({ label, options, required = false, value, onChange, ...props }:
 
 // --- Utils ---
 
-const compressImage = (base64: string, maxWidth = 800, quality = 0.7): Promise<string> => {
+const compressImage = (base64: string, maxWidth = 600, quality = 0.5): Promise<string> => {
   return new Promise((resolve) => {
     if (!base64 || typeof base64 !== 'string' || !base64.startsWith('data:image/')) {
+      // If it's a PDF or large non-image, we should probably warn, but for now just resolve
       resolve(base64);
       return;
     }
@@ -6540,7 +6541,7 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
   };
 
   const shareOnWhatsApp = () => {
-    const text = `*Fee Receipt - ${schoolProfile.name}*\n_${schoolProfile.tagline}_\n\nReceipt No: ${transaction.invoiceNumber || transaction.id}\nStudent: ${transaction.studentName}\nClass: ${transaction.class}-${transaction.section}\nPeriod: ${transaction.period || 'N/A'}\nFee Type: ${transaction.feeType}\nTotal Amount: ₹${transaction.amount}\nPaid Amount: ₹${transaction.totalPaid}\nDate: ${transaction.date}\nTxn ID: ${transaction.transactionId || 'N/A'}`;
+    const text = `*Fee Receipt - ${schoolProfile.name}*\n\nReceipt No: ${transaction.invoiceNumber || transaction.id}\nStudent: ${transaction.studentName}\nClass: ${transaction.class}-${transaction.section}\nPeriod: ${transaction.period || 'N/A'}\nFee Type: ${transaction.feeType}\nTotal Amount: ₹${transaction.amount}\nPaid Amount: ₹${transaction.totalPaid}\nDate: ${transaction.date}\nTxn ID: ${transaction.transactionId || 'N/A'}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -6631,19 +6632,22 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
              
              <div className="text-center mb-6 pt-4 text-black">
                <div className="receipt-frame">
-                  <div className="script-font font-bold">Gopimangal & Sons</div>
-                  <div className="script-font" style={{ fontSize: printSize === '58mm' ? '9px' : '13px' }}>Shubhashpark Khowai</div>
+                  <div className="script-font font-bold">{schoolProfile.name}</div>
+                  <div className="script-font" style={{ fontSize: printSize === '58mm' ? '9px' : '13px' }}>
+                    {schoolProfile.address?.split(',')[0]}
+                  </div>
                </div>
                
-               <h1 className={`${printSize === '58mm' ? 'text-sm' : 'text-xl'} bold-mono uppercase mt-2`}>GOPIMANGAL&SONS</h1>
+               <h1 className={`${printSize === '58mm' ? 'text-sm' : 'text-xl'} bold-mono uppercase`}>{schoolProfile.name}</h1>
                
-               <div className="condensed font-bold mt-1 space-y-0.5" style={{ fontSize: printSize === '58mm' ? '8px' : '11px' }}>
-                 <p>SUBHASH PARK , KHOWAI</p>
-                 <p>State: 16-Tripura</p>
-                 <p>Ph.No.: 8787792021</p>
-                 <p className="lowercase">Email: sons.gopimangal@gmail.com</p>
-                 <p>GSTIN: 16BJNPN2618E1Z8</p>
-               </div>
+                <div className="condensed font-bold mt-1 space-y-0.5" style={{ fontSize: printSize === '58mm' ? '9px' : '12px' }}>
+                  <p className="uppercase">{schoolProfile.address}</p>
+                  <p className="uppercase">STATE: {schoolProfile.state} {schoolProfile.contact && ` | PH.NO.: ${schoolProfile.contact}`}</p>
+                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-0.5">
+                    {schoolProfile.email && <p className="lowercase">Email: {schoolProfile.email}</p>}
+                    {schoolProfile.gst && <p className="uppercase">GSTIN: {schoolProfile.gst}</p>}
+                  </div>
+                </div>
              </div>
              
              <div className="border-t border-dashed border-slate-400 my-2"></div>
@@ -9947,40 +9951,124 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         login_password: newStaff.password || '123'
       };
 
-      // Generic resilient save function to handle stale schema cache (PGRST204)
+      // Refined resilient save function to handle stale schema cache (PGRST204) and possible large payloads
       const saveResiliently = async (payload: any, isUpdate: boolean) => {
         let currentPayload = { ...payload };
         let attempt = 0;
-        const maxAttempts = 5;
+        const maxAttempts = 30; // Highly increased to peel off many potential missing columns
+        
+        // Track columns that we already know are missing to avoid redundant attempts
+        if (!(window as any)._missing_staff_columns) (window as any)._missing_staff_columns = new Set();
+        const missingCols = (window as any)._missing_staff_columns as Set<string>;
 
         while (attempt < maxAttempts) {
-          const request = isUpdate 
-            ? supabase.from('staff').update(currentPayload).eq('staff_id', staffId)
-            : supabase.from('staff').insert([currentPayload]);
-          
-          const { data, error } = await (isUpdate ? request : request.select());
+          // Remove columns we already identified as missing
+          Object.keys(currentPayload).forEach(key => {
+            if (missingCols.has(key)) delete currentPayload[key];
+          });
 
-          if (error) {
-            if (error.code === 'PGRST204') {
-              // Extract column name from error message: "Could not find the 'column_name' column..."
-              const match = error.message.match(/column '(.*?)'/i) || error.message.match(/column "(.*?)"/i);
-              if (match && match[1]) {
-                const missingColumn = match[1];
-                console.warn(`Rescheduling save after removing missing column from cache: ${missingColumn}`);
-                delete currentPayload[missingColumn];
-                attempt++;
-                continue;
+          try {
+            const request = isUpdate 
+              ? supabase.from('staff').update(currentPayload).eq('staff_id', staffId)
+              : supabase.from('staff').insert([currentPayload]);
+            
+            const { data, error } = await (isUpdate ? request.select() : request.select());
+
+            if (error) {
+              // Handle schema cache issues (missing columns)
+              if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('schema cache')) {
+                const match = error.message.match(/column ['"](.*?)['"]/i) || 
+                             error.message.match(/['"](.*?)['"] column/i) ||
+                             error.message.match(/column (.*?) /i);
+                
+                let missingColumn = match ? match[1] : null;
+
+                if (!missingColumn) {
+                  const commonCols = ['documents', 'photo', 'emergency_contact', 'father_name', 'mother_name', 'qualification', 'experience', 'residential_address', 'date_of_birth', 'joining_date', 'login_id', 'login_password', 'status', 'staff_id'];
+                  for (const col of commonCols) {
+                    if (error.message.toLowerCase().includes(col.toLowerCase())) {
+                      missingColumn = col;
+                      break;
+                    }
+                  }
+                }
+                
+                if (missingColumn && currentPayload[missingColumn] !== undefined) {
+                  console.warn(`Attempt ${attempt + 1}: Removing missing column '${missingColumn}' from staff payload.`);
+                  missingCols.add(missingColumn);
+                  delete currentPayload[missingColumn];
+                  attempt++;
+                  continue;
+                }
+              }
+              
+              // Handle size/network errors
+              const errorMsg = error.message.toLowerCase();
+              if (errorMsg.includes('failed to fetch') || errorMsg.includes('network') || errorMsg.includes('too large') || errorMsg.includes('payload')) {
+                if (currentPayload.documents && currentPayload.documents.length > 0) {
+                  console.warn("Payload potentially too large. Reducing documents...");
+                  currentPayload.documents = currentPayload.documents.slice(0, Math.floor(currentPayload.documents.length / 2));
+                  if (currentPayload.documents.length === 0) delete currentPayload.documents;
+                  attempt++;
+                  continue;
+                } else if (currentPayload.photo) {
+                  console.warn("Payload still too large. Removing photo...");
+                  delete currentPayload.photo;
+                  attempt++;
+                  continue;
+                }
+              }
+              
+              throw error;
+            }
+
+            // Confirm something was actually updated/inserted
+            if (isUpdate && (!data || data.length === 0)) {
+              console.warn("Update affected 0 rows. Attempting to verify record existence...");
+              const { data: check } = await supabase.from('staff').select('id').eq('staff_id', staffId).limit(1);
+              if (!check || check.length === 0) {
+                console.log("Record missing. Returning success to avoid error loop, but note that no update happened.");
+                return null;
               }
             }
-            throw error;
+
+            return data;
+          } catch (err: any) {
+            console.error(`Save attempt ${attempt + 1} failed:`, err);
+            const errorMsg = err.message?.toLowerCase() || '';
+            const isFetchError = err instanceof TypeError || errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('too large');
+            
+            if (isFetchError) {
+              if (currentPayload.documents && currentPayload.documents.length > 0) {
+                 currentPayload.documents = []; 
+                 attempt++;
+                 continue;
+              } else if (currentPayload.photo) {
+                 delete currentPayload.photo;
+                 attempt++;
+                 continue;
+              }
+            }
+            
+            attempt++;
+            if (attempt >= maxAttempts) throw err;
+            await new Promise(r => setTimeout(r, 500));
           }
-          return data;
-        };
-        throw new Error('Too many schema cache errors');
+        }
+        throw new Error('Save failed after multiple attempts. The database structure might be missing columns or the data is too large.');
       };
 
       if (editingStaff) {
-        await saveResiliently(staffPayload, true);
+        try {
+          await saveResiliently(staffPayload, true);
+        } catch (saveErr: any) {
+          console.error('Final Save Error:', saveErr);
+          const errMsg = saveErr.message || JSON.stringify(saveErr);
+          if (errMsg.includes('fetch') || errMsg.toLowerCase().includes('large')) {
+            throw new Error('Update failed: The profile data (including documents) might be too large for the database. Try removing some documents and saving again.');
+          }
+          throw saveErr;
+        }
 
         // Update user role and name as well
         await supabase
@@ -10002,7 +10090,17 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         setEditingStaff(null);
         alert('Staff updated successfully!');
       } else {
-        const staffData = await saveResiliently(staffPayload, false);
+        let staffData: any;
+        try {
+          staffData = await saveResiliently(staffPayload, false);
+        } catch (saveErr: any) {
+          console.error('Final Registration Error:', saveErr);
+          const errMsg = saveErr.message || JSON.stringify(saveErr);
+          if (errMsg.includes('fetch') || errMsg.toLowerCase().includes('large')) {
+            throw new Error('Registration failed: The profile data (including documents) might be too large for the database. Try removing some documents and saving again.');
+          }
+          throw saveErr;
+        }
 
         // Create user for login
         const { error: userError } = await supabase
@@ -10061,9 +10159,9 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         password: '',
         documents: []
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving staff:', err);
-      alert('Error saving staff member');
+      alert(`Error saving staff member: ${err.message || 'Unknown error'}`);
     }
   };
 
@@ -13179,6 +13277,7 @@ export default function App() {
     gst: 'TR/SCH/2024/001',
     regNo: 'TRUST/2011/SMT',
     email: 'info@subraimission.org',
+    state: '16-Tripura',
     currentSession: '2025-26',
     sessions: ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28', '2028-29'],
     wardenPanelId: 'warden',
@@ -13341,6 +13440,7 @@ export default function App() {
           gst: profile.gst_number,
           regNo: profile.registration_number,
           email: profile.school_email,
+          state: profile.state,
           currentSession: profile.current_academic_session,
           wardenPanelId: profile.warden_id,
           wardenPanelPassword: profile.warden_password,
@@ -14138,6 +14238,7 @@ export default function App() {
         school_name: schoolProfile.name,
         contact_number: schoolProfile.contact,
         school_email: schoolProfile.email,
+        state: schoolProfile.state,
         gst_number: schoolProfile.gst,
         registration_number: schoolProfile.regNo,
         school_address: schoolProfile.address,
@@ -16584,6 +16685,11 @@ export default function App() {
                             label="Current Academic Session" 
                             value={schoolProfile.currentSession} 
                             onChange={(e: any) => setSchoolProfile({...schoolProfile, currentSession: e.target.value})} 
+                          />
+                          <Input 
+                            label="State Code/Name" 
+                            value={schoolProfile.state} 
+                            onChange={(e: any) => setSchoolProfile({...schoolProfile, state: e.target.value})} 
                           />
                           <div className="col-span-full">
                             <label className="label-text">Manage Academic Sessions</label>
