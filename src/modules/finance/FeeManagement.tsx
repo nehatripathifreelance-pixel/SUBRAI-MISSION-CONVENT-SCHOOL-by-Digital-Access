@@ -8,7 +8,8 @@ import {
   FileSpreadsheet, 
   FileText, 
   Printer, 
-  Share2, 
+  Share2,
+  MessageCircle,
   Coins, 
   Wallet, 
   Receipt, 
@@ -49,6 +50,7 @@ interface FeeManagementProps {
   masterData: any;
   showModal: (title: string, message: string) => void;
   getStudentDueFees: (student: any) => number;
+  setShowReceipt?: (transaction: FeeTransaction) => void;
 }
 
 export const FeeManagement = ({ 
@@ -69,7 +71,8 @@ export const FeeManagement = ({
   setAdjustmentLogs,
   masterData, 
   showModal,
-  getStudentDueFees
+  getStudentDueFees,
+  setShowReceipt
 }: FeeManagementProps) => {
   const [activeTab, setActiveTab] = useState<'collect' | 'master' | 'reports' | 'ledger' | 'bank' | 'adjustments'>('collect');
   const [selectedClass, setSelectedClass] = useState('');
@@ -189,6 +192,22 @@ export const FeeManagement = ({
       };
     });
     setSetupFees(initialSetup);
+  };
+
+  const handlePrintAll = () => {
+    window.print();
+  };
+
+  const handleExportXLS = () => {
+    const ws = XLSX.utils.json_to_sheet(feeTransactions);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+    XLSX.writeFile(wb, "FeeTransactions.xlsx");
+  };
+
+  const handleShareWhatsApp = (t: FeeTransaction) => {
+    const text = `*Fee Receipt - ${t.studentName}*\nInvoice: ${t.invoiceNumber}\nAmount: ₹${t.totalPaid}\nDate: ${t.date}\nStatus: ${t.status}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const handleCollectFee = () => {
@@ -785,7 +804,18 @@ export const FeeManagement = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <h3 className="text-lg font-bold flex items-center gap-2"><Receipt size={20} className="text-primary" /> Recent Transactions</h3>
             <div className="flex gap-3">
-              <button className="btn-secondary flex items-center gap-2"><Printer size={16} /> Print All</button>
+              <button 
+                onClick={handlePrintAll}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Printer size={16} /> Print All
+              </button>
+              <button 
+                onClick={handleExportXLS}
+                className="btn-secondary flex items-center gap-2 bg-green-50 text-green-700 border-green-200"
+              >
+                <FileSpreadsheet size={16} /> Download All
+              </button>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -813,8 +843,20 @@ export const FeeManagement = ({
                     <td className="py-4 text-sm text-text-sub">{t.date}</td>
                     <td className="py-4">
                       <div className="flex gap-2">
-                        <button className="p-2 hover:bg-slate-100 rounded-lg text-primary"><Printer size={16} /></button>
-                        <button className="p-2 hover:bg-slate-100 rounded-lg text-blue-500"><Share2 size={16} /></button>
+                        <button 
+                          onClick={() => setShowReceipt && setShowReceipt(t)}
+                          className="p-2 hover:bg-slate-100 rounded-lg text-primary"
+                          title="View & Print Receipt"
+                        >
+                          <Printer size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleShareWhatsApp(t)}
+                          className="p-2 hover:bg-slate-100 rounded-lg text-green-500"
+                          title="Share on WhatsApp"
+                        >
+                          <MessageCircle size={16} />
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -249,14 +249,30 @@ export interface Staff {
   staffId: string;
   name: string;
   surname: string;
+  fatherName?: string;
+  motherName?: string;
+  dob?: string;
+  gender?: string;
   email: string;
   mobile: string;
+  emergencyContact?: string;
   role: string;
   department: string;
   designation: string;
+  qualification?: string;
+  experience?: string;
+  address?: string;
   photo?: string;
   joiningDate: string;
   status: 'Active' | 'Inactive';
+  username?: string;
+  password?: string;
+  loginId?: string;
+  loginPassword?: string;
+  documents?: {
+    name: string;
+    file: string;
+  }[];
 }
 
 export interface Department {

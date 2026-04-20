@@ -40,6 +40,7 @@ import {
   Download,
   Share2,
   MessageCircle,
+  Youtube,
   FileSpreadsheet,
   Calendar,
   Cake,
@@ -411,17 +412,30 @@ interface Staff {
   staffId?: string;
   name: string;
   surname: string;
+  fatherName?: string;
+  motherName?: string;
   email: string;
   mobile: string;
+  emergencyContact?: string;
   role: string;
   department: string;
   designation: string;
+  qualification?: string;
+  experience?: string;
+  address?: string;
   photo?: string;
   joiningDate: string;
   dob?: string;
+  gender?: string;
   status: 'Active' | 'Inactive';
   username?: string;
   password?: string;
+  loginId?: string;
+  loginPassword?: string;
+  documents?: {
+    name: string;
+    file: string;
+  }[];
 }
 
 interface Department {
@@ -1633,7 +1647,7 @@ const Dashboard = ({
   );
 };
 
-const Input = ({ label, type = "text", placeholder, required = false, ...props }: any) => (
+const Input = ({ label, type = "text", placeholder, required = false, value, onChange, ...props }: any) => (
   <div className="w-full">
     <label className="label-text">
       {label} {required && <span className="text-red-500">*</span>}
@@ -1642,84 +1656,170 @@ const Input = ({ label, type = "text", placeholder, required = false, ...props }
       type={type}
       placeholder={placeholder}
       className="input-field"
+      value={value ?? ""}
+      onChange={onChange}
+      readOnly={!onChange && value !== undefined}
       {...props}
     />
   </div>
 );
 
-const Select = ({ label, options, required = false, ...props }: any) => (
+const Select = ({ label, options, required = false, value, onChange, ...props }: any) => (
   <div className="w-full">
     <label className="label-text">
       {label} {required && <span className="text-red-500">*</span>}
     </label>
-    <select className="input-field" {...props}>
+    <select className="input-field" value={value ?? ""} onChange={onChange || (() => {})} {...props}>
       <option value="">Select {label}</option>
-      {options.map((opt: string) => (
+      {(options || []).map((opt: string) => (
         <option key={opt} value={opt}>{opt}</option>
       ))}
     </select>
   </div>
 );
 
-const FileUpload = ({ label, icon: Icon = Upload, required = false, onChange, preview, isViewOnly }: any) => (
-  <div className="w-full">
-    <label className="label-text">
-      {label} {required && <span className="text-red-500">*</span>}
-    </label>
-    <div className={`relative group ${isViewOnly ? 'cursor-default' : 'cursor-pointer'}`}>
-      {!isViewOnly && (
-        <input
-          type="file"
-          accept=".pdf,.jpg,.jpeg,.png"
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          onChange={onChange}
-        />
-      )}
-      <div className={`flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl transition-all overflow-hidden min-h-[120px] ${!isViewOnly ? 'group-hover:border-primary group-hover:bg-primary/5' : 'opacity-80'}`}>
-        {preview ? (
-          <div className="flex flex-col items-center gap-2 group/preview relative">
-            {preview.startsWith('data:application/pdf') ? (
-              <div className="flex flex-col items-center gap-1">
-                <FileText className="text-primary" size={32} />
-                <span className="text-[10px] text-primary font-medium">PDF Document</span>
-              </div>
-            ) : (
-              <img src={preview} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
-            )}
-            <button 
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                const win = window.open();
-                if (win) {
-                  if (preview.startsWith('data:application/pdf')) {
-                    win.document.write(`<iframe src="${preview}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                  } else {
-                    win.document.write(`<img src="${preview}" style="max-width: 100%; height: auto;" />`);
-                  }
-                  win.document.close();
-                }
-              }}
-              className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center rounded-lg transition-opacity z-20"
-            >
-              <Eye className="text-white" size={20} />
-            </button>
-          </div>
-        ) : (
-          <>
-            <Icon className="text-slate-400" size={24} />
-            <span className="text-xs text-text-secondary">{isViewOnly ? 'No file uploaded' : 'Click or drag to upload'}</span>
-          </>
+// --- Utils ---
+
+const compressImage = (base64: string, maxWidth = 800, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!base64 || typeof base64 !== 'string' || !base64.startsWith('data:image/')) {
+      resolve(base64);
+      return;
+    }
+    const img = new Image();
+    img.src = base64;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(base64);
+  });
+};
+
+const FileUpload = ({ label, icon: Icon = Upload, required = false, onChange, preview, isViewOnly }: any) => {
+  const handleFileChange = (e: any) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        if (file.type.startsWith('image/')) {
+          const compressed = await compressImage(base64);
+          onChange(compressed);
+        } else {
+          onChange(base64);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const isPdf = typeof preview === 'string' && preview.startsWith('data:application/pdf');
+
+  return (
+    <div className="w-full">
+      <label className="label-text">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className={`relative group ${isViewOnly ? 'cursor-default' : 'cursor-pointer'}`}>
+        {!isViewOnly && (
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            onChange={handleFileChange}
+          />
         )}
+        <div className={`flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl transition-all overflow-hidden min-h-[120px] ${!isViewOnly ? 'group-hover:border-primary group-hover:bg-primary/5' : 'opacity-80'}`}>
+          {preview ? (
+            <div className="flex flex-col items-center gap-2 group/preview relative">
+              {isPdf ? (
+                <div className="flex flex-col items-center gap-1">
+                  <FileText className="text-primary" size={32} />
+                  <span className="text-[10px] text-primary font-medium">PDF Document</span>
+                </div>
+              ) : (
+                <img src={typeof preview === 'string' ? preview : ''} alt="Preview" className="max-h-20 w-auto object-contain rounded-lg" referrerPolicy="no-referrer" />
+              )}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center rounded-lg transition-opacity z-20">
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const win = window.open();
+                    if (win) {
+                      if (isPdf) {
+                        win.document.write(`<iframe src="${preview}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                      } else {
+                        win.document.write(`<img src="${preview}" style="max-width: 100%; height: auto;" />`);
+                      }
+                      win.document.close();
+                    }
+                  }}
+                  className="p-1.5 bg-white rounded-lg text-primary hover:scale-110 transition-transform shadow-sm"
+                >
+                  <Eye size={16} />
+                </button>
+                {!isViewOnly && (
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange("");
+                    }}
+                    className="p-1.5 bg-white rounded-lg text-red-500 hover:scale-110 transition-transform shadow-sm ml-2"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <Icon className="text-slate-400" size={24} />
+              <span className="text-xs text-text-secondary">{isViewOnly ? 'No file uploaded' : 'Click or drag to upload'}</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-const Attendance = ({ students, attendance, setAttendance, masterData, currentUser, supabase }: any) => {
+const Attendance = ({ students, attendance, setAttendance, masterData, currentUser, supabase, teacherAssignments, setSelectedStudentQR }: any) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'manual' | 'history' | 'my-attendance'>(
     (currentUser?.role === 'student' || currentUser?.role === 'parent') ? 'my-attendance' : 'scan'
   );
+
+  const assignedClasses = (currentUser?.role === 'teacher' || currentUser?.role === 'staff') && teacherAssignments 
+    ? teacherAssignments.filter((a: any) => {
+        const teacherName = currentUser?.name?.toLowerCase();
+        const isClassTeacher = a.classTeacher?.toLowerCase() === teacherName;
+        const isSubjectTeacher = (a.subjectTeachers || []).some((st: any) => st.teacher?.toLowerCase() === teacherName);
+        return isClassTeacher || isSubjectTeacher;
+      })
+    : [];
+
+  const classOptions = (currentUser?.role === 'teacher' || currentUser?.role === 'staff') && assignedClasses.length > 0
+    ? [...new Set(assignedClasses.map(ac => ac.class))]
+    : masterData.classes;
+
+  const sectionOptions = (currentUser?.role === 'teacher' || currentUser?.role === 'staff') && assignedClasses.length > 0
+    ? [...new Set(assignedClasses.map(ac => ac.section))]
+    : masterData.sections;
+
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [studentSearch, setStudentSearch] = useState('');
@@ -1741,6 +1841,20 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     section: ''
   });
 
+  // Pre-filter for teachers/staff
+  useEffect(() => {
+    if ((currentUser?.role === 'teacher' || currentUser?.role === 'staff') && teacherAssignments) {
+      const teacherName = currentUser.name?.toLowerCase();
+      const assignments = teacherAssignments.filter((a: any) => 
+        a.classTeacher?.toLowerCase() === teacherName || (a.subjectTeachers || []).some((st: any) => st.teacher?.toLowerCase() === teacherName)
+      );
+      if (assignments.length > 0) {
+        setScanFilters({ class: assignments[0].class, section: assignments[0].section });
+        setManualForm(prev => ({ ...prev, class: assignments[0].class, section: assignments[0].section }));
+      }
+    }
+  }, [currentUser, teacherAssignments]);
+
   const [scanning, setScanning] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
 
@@ -1748,7 +1862,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     let html5QrCode: Html5Qrcode | null = null;
 
     const startScanner = async () => {
-      if (scanning && activeTab === 'scan' && (currentUser?.role === 'admin' || currentUser?.role === 'teacher')) {
+      if (scanning && activeTab === 'scan' && (currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff')) {
         try {
           await new Promise(resolve => setTimeout(resolve, 500));
           const element = document.getElementById("reader");
@@ -1834,7 +1948,8 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
   }
 
   const markAttendance = async (student: any, status: Attendance['status']) => {
-    const today = formatDate(new Date());
+    const today = getTodayDate();
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     let ip = 'Unknown';
     let location = 'Unknown';
@@ -1878,23 +1993,29 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
 
       if (data) {
         setAttendance((prev: Attendance[]) => {
-          const existing = prev.find((a: any) => a.studentId === student.studentId && a.date === today);
+          const entryDate = data[0].attendance_date;
+          const existing = prev.find((a: any) => a.studentId === student.studentId && (a.date === entryDate || a.date === formatDate(entryDate)));
+          
+          const timeToSet = data[0].created_at ? new Date(data[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : nowTime;
+          
           if (existing) {
             return prev.map((a: any) => 
-              (a.studentId === student.studentId && a.date === today) ? { ...a, ...data[0], studentId: data[0].student_id, date: data[0].attendance_date } : a
+              (a.studentId === student.studentId && (a.date === entryDate || a.date === formatDate(entryDate))) 
+                ? { ...a, ...data[0], studentId: data[0].student_id, date: data[0].attendance_date, time: timeToSet } 
+                : a
             );
           } else {
-            return [...prev, { ...data[0], studentId: data[0].student_id, date: data[0].attendance_date }];
+            return [{ ...data[0], studentId: data[0].student_id, date: data[0].attendance_date, time: timeToSet }, ...prev];
           }
         });
       }
     } else {
       setAttendance((prev: Attendance[]) => {
-        const existing = prev.find((a: any) => a.studentId === student.studentId && a.date === today);
+        const existing = prev.find((a: any) => a.studentId === student.studentId && (a.date === today || a.date === formatDate(today)));
         
         if (existing) {
           return prev.map((a: any) => 
-            (a.studentId === student.studentId && a.date === today) ? { ...a, status, time: new Date().toLocaleTimeString() } : a
+            (a.studentId === student.studentId && (a.date === today || a.date === formatDate(today))) ? { ...a, status, time: nowTime } : a
           );
         } else {
           const newEntry: Attendance = {
@@ -1905,11 +2026,11 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
             section: student.section,
             status,
             date: today,
-            time: new Date().toLocaleTimeString(),
+            time: nowTime,
             markedBy: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
             period: 'Morning'
           };
-          return [...prev, newEntry];
+          return [newEntry, ...prev];
         }
       });
     }
@@ -1924,15 +2045,17 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     const studentsToMark = students.filter((s: any) => selectedStudents.includes(s.studentId));
     
     if (supabase) {
-      const newEntries = studentsToMark.map((s: any) => {
+      const newEntries: any[] = [];
+      const updateEntries: any[] = [];
+
+      studentsToMark.forEach((s: any) => {
         const existing = attendance.find((a: any) => 
           a.studentId === s.studentId && 
           a.date === manualForm.date &&
           a.period === manualForm.period
         );
-        if (existing) return null;
 
-        return {
+        const entry = {
           student_id: s.studentId,
           student_name: `${s.name} ${s.surname}`,
           class_name: s.class,
@@ -1942,35 +2065,57 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           period: manualForm.period,
           method: 'Manual'
         };
-      }).filter(Boolean);
 
-      if (newEntries.length === 0) {
-        alert("No new attendance records to mark.");
+        if (existing && existing.id) {
+          updateEntries.push({ ...entry, id: existing.id });
+        } else {
+          newEntries.push(entry);
+        }
+      });
+
+      if (newEntries.length === 0 && updateEntries.length === 0) {
+        alert("No students selected.");
         return;
       }
 
-      const { data, error } = await supabase
-        .from('student_attendance')
-        .insert(newEntries)
-        .select();
+      try {
+        let results: any[] = [];
+        
+        if (newEntries.length > 0) {
+          const { data: nData, error: nError } = await supabase.from('student_attendance').insert(newEntries).select();
+          if (nError) throw nError;
+          if (nData) results = [...results, ...nData];
+        }
 
-      if (error) {
-        console.error('Error saving manual attendance:', error);
-        alert('Failed to save attendance to database');
-        return;
-      }
+        if (updateEntries.length > 0) {
+          for (const up of updateEntries) {
+            const { data: uData, error: uError } = await supabase.from('student_attendance').update(up).eq('id', up.id).select();
+            if (uError) throw uError;
+            if (uData) results = [...results, ...uData];
+          }
+        }
 
-      if (data) {
-        setAttendance([...attendance, ...data.map((d: any) => ({ 
-          ...d, 
-          studentId: d.student_id, 
-          studentName: d.student_name,
-          class: d.class_name,
-          section: d.section_name,
-          date: d.attendance_date
-        }))]);
-        setSelectedStudents([]);
-        alert(`Attendance marked for ${data.length} students`);
+        if (results.length > 0) {
+          setAttendance((prev: Attendance[]) => {
+            const updatedBatch = results.map(d => ({
+              ...d,
+              studentId: d.student_id,
+              studentName: d.student_name,
+              class: d.class_name,
+              section: d.section_name,
+              date: d.attendance_date,
+              time: d.created_at ? new Date(d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'
+            }));
+
+            const filteredPrev = prev.filter(p => !results.some(r => r.id === p.id));
+            return [...updatedBatch, ...filteredPrev];
+          });
+          setSelectedStudents([]);
+          alert(`Attendance processed for ${results.length} students`);
+        }
+      } catch (err: any) {
+        console.error('Error processing attendance:', err);
+        alert('Failed to process attendance: ' + err.message);
       }
     } else {
       const newEntries = studentsToMark.map((s: any) => {
@@ -1979,32 +2124,46 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           a.date === manualForm.date &&
           a.period === manualForm.period
         );
-        if (existing) return null;
-
-        return {
-          id: Math.random().toString(36).substr(2, 9),
+        
+        const entry: Attendance = {
+          id: existing?.id || Math.random().toString(36).substr(2, 9),
           studentId: s.studentId,
           studentName: `${s.name} ${s.surname}`,
           class: s.class,
           section: s.section,
           status: manualForm.status,
           date: manualForm.date,
-          time: '--',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           markedBy: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
         };
-      }).filter(Boolean);
+        return entry;
+      });
 
-      setAttendance([...attendance, ...newEntries as any]);
+      setAttendance((prev: Attendance[]) => {
+        const filteredPrev = prev.filter(p => !newEntries.some(n => n.id === p.id));
+        return [...newEntries, ...filteredPrev];
+      });
       setSelectedStudents([]);
-      alert(`Attendance marked for ${newEntries.length} students`);
+      alert(`Attendance updated for ${newEntries.length} students`);
     }
   };
 
   const scanFilteredStudents = students.filter((s: any) => {
+    // For teachers/staff, if no filter is selected, only show their assigned students
+    const isTeacher = currentUser?.role === 'teacher' || currentUser?.role === 'staff';
+    const noFilters = !scanFilters.class && !scanFilters.section && !studentSearch;
+    
+    if (isTeacher && noFilters) {
+      return assignedClasses.some(ac => ac.class === s.class && ac.section === s.section);
+    }
+
     const matchesClass = !scanFilters.class || s.class === scanFilters.class;
     const matchesSection = !scanFilters.section || s.section === scanFilters.section;
-    return matchesClass && matchesSection;
+    const matchesSearch = !studentSearch || 
+      `${s.name} ${s.surname}`.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.studentId.toLowerCase().includes(studentSearch.toLowerCase());
+    return matchesClass && matchesSection && matchesSearch;
   });
 
   const manualFilteredStudents = students.filter((s: any) => {
@@ -2094,7 +2253,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       </div>
 
       <div className="flex gap-4 p-1 bg-slate-100 rounded-2xl w-fit">
-        {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') ? (
+        {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') ? (
           [
             { id: 'scan', label: 'QR Scan', icon: QrCode },
             { id: 'manual', label: 'Manual Entry', icon: UserCheck },
@@ -2124,7 +2283,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'scan' && (currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+        {activeTab === 'scan' && (currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
           <motion.div key="scan" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-1 space-y-6">
@@ -2135,13 +2294,13 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                   <div className="space-y-4">
                     <Select 
                       label="Class" 
-                      options={masterData.classes} 
+                      options={classOptions} 
                       value={scanFilters.class} 
                       onChange={(e: any) => setScanFilters({...scanFilters, class: e.target.value})} 
                     />
                     <Select 
                       label="Section" 
-                      options={masterData.sections} 
+                      options={sectionOptions} 
                       value={scanFilters.section} 
                       onChange={(e: any) => setScanFilters({...scanFilters, section: e.target.value})} 
                     />
@@ -2217,12 +2376,24 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
               </div>
 
               <Card className="lg:col-span-2">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                   <h3 className="text-lg font-bold flex items-center gap-2 text-primary">
                     <Users size={20} /> Student List ({scanFilteredStudents.length})
                   </h3>
-                  <div className="text-xs font-bold text-text-sub bg-slate-100 px-3 py-1 rounded-full">
-                    {formatDate(new Date())}
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input 
+                        type="text" 
+                        placeholder="Search student..." 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                      />
+                    </div>
+                    <div className="text-xs font-bold text-text-sub bg-slate-100 px-3 py-1 rounded-full whitespace-nowrap">
+                      {formatDate(new Date())}
+                    </div>
                   </div>
                 </div>
 
@@ -2232,6 +2403,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                       <tr>
                         <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student</th>
                         <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Class/Section</th>
+                        <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-center">QR</th>
                         <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
                         <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Time</th>
                       </tr>
@@ -2239,13 +2411,17 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                     <tbody className="divide-y divide-slate-100">
                       {scanFilteredStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="py-12 text-center text-text-sub italic">
-                            Select class and section to view students.
+                          <td colSpan={5} className="py-12 text-center text-text-sub italic">
+                            No students found. {currentUser?.role === 'admin' ? 'Select class and section to view students.' : ''}
                           </td>
                         </tr>
                       ) : (
                         scanFilteredStudents.map((s: any) => {
-                          const record = attendance.find((a: any) => a.studentId === s.studentId && a.date === formatDate(new Date()));
+                          const todayFormat = getTodayDate();
+                          const record = attendance.find((a: any) => 
+                            a.studentId === s.studentId && 
+                            (a.date === todayFormat || a.date === formatDate(todayFormat))
+                          );
                           return (
                             <tr key={s.studentId} className={`transition-colors ${record ? 'bg-green-50/30' : 'hover:bg-slate-50'}`}>
                               <td className="p-4">
@@ -2261,6 +2437,15 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                               </td>
                               <td className="p-4 text-sm text-text-sub">
                                 {s.class} - {s.section}
+                              </td>
+                              <td className="p-4 text-center">
+                                <button 
+                                  onClick={() => setSelectedStudentQR(s)}
+                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-primary hover:border-primary transition-all mx-auto"
+                                  title="View QR Code"
+                                >
+                                  <QrCode size={16} />
+                                </button>
                               </td>
                               <td className="p-4">
                                 {record ? (
@@ -2289,7 +2474,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           </motion.div>
         )}
 
-        {activeTab === 'manual' && (currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+        {activeTab === 'manual' && (currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
           <motion.div key="manual" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <Card className="lg:col-span-1 h-fit">
@@ -2297,8 +2482,8 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                   <UserCheck size={20} /> Attendance Settings
                 </h3>
                 <div className="space-y-6">
-                  <Select label="Class" options={masterData.classes} value={manualForm.class} onChange={(e: any) => setManualForm({...manualForm, class: e.target.value})} />
-                  <Select label="Section" options={masterData.sections} value={manualForm.section} onChange={(e: any) => setManualForm({...manualForm, section: e.target.value})} />
+                  <Select label="Class" options={classOptions} value={manualForm.class} onChange={(e: any) => setManualForm({...manualForm, class: e.target.value})} />
+                  <Select label="Section" options={sectionOptions} value={manualForm.section} onChange={(e: any) => setManualForm({...manualForm, section: e.target.value})} />
                   <Input label="Date" type="date" value={manualForm.date} onChange={(e: any) => setManualForm({...manualForm, date: e.target.value})} />
                   <Select label="Mark As" options={['Present', 'Absent', 'Late', 'Leave', 'Holiday']} value={manualForm.status} onChange={(e: any) => setManualForm({...manualForm, status: e.target.value as any})} />
                   
@@ -2437,7 +2622,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
         {(activeTab === 'history' || activeTab === 'my-attendance') && (
           <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <Card>
-              {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
@@ -2455,7 +2640,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                       onChange={(e) => setHistoryFilters({...historyFilters, class: e.target.value})}
                     >
                       <option value="">All Classes</option>
-                      {masterData.classes.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                      {classOptions.map((c: string) => <option key={c} value={c}>{c}</option>)}
                     </select>
                     <select 
                       className="bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 outline-none text-sm font-medium"
@@ -2463,7 +2648,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                       onChange={(e) => setHistoryFilters({...historyFilters, section: e.target.value})}
                     >
                       <option value="">All Sections</option>
-                      {masterData.sections.map((s: string) => <option key={s} value={s}>{s}</option>)}
+                      {sectionOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
@@ -2474,32 +2659,32 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
-                      {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student</th>}
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student</th>}
                       <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Class</th>
                       <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
                       <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Time</th>
-                      {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                         <>
                           <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">IP Address</th>
                           <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Location</th>
                         </>
                       )}
-                      {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>}
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {((currentUser?.role === 'admin' || currentUser?.role === 'teacher') ? filteredHistory : myAttendance).length === 0 ? (
+                    {((currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') ? filteredHistory : myAttendance).length === 0 ? (
                       <tr>
                         <td colSpan={8} className="py-12 text-center text-text-sub italic">No attendance records found.</td>
                       </tr>
                     ) : (
-                      ((currentUser?.role === 'admin' || currentUser?.role === 'teacher') ? filteredHistory : myAttendance).map((a: any) => (
+                      ((currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') ? filteredHistory : myAttendance).map((a: any) => (
                         <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="py-4 text-sm font-medium text-text-sub">
                             {formatDate(a.date)}
                             <span className="ml-2 text-[10px] font-bold text-primary/60 uppercase">({a.period || 'Morning'})</span>
                           </td>
-                          {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+                          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                             <td className="py-4">
                               <p className="text-sm font-bold text-text-heading">{a.studentName}</p>
                               <p className="text-[10px] text-text-sub uppercase">{a.studentId}</p>
@@ -2517,13 +2702,13 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                             </span>
                           </td>
                           <td className="py-4 text-sm font-medium text-text-sub">{a.time || a.attendanceTime || 'N/A'}</td>
-                          {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+                          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                             <>
                               <td className="py-4 text-xs font-mono text-text-sub">{a.ipAddress || 'N/A'}</td>
                               <td className="py-4 text-xs font-mono text-text-sub">{a.location || 'N/A'}</td>
                             </>
                           )}
-                          {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+                          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                             <td className="py-4 text-right">
                               <div className="flex justify-end gap-2">
                                 <button 
@@ -2623,7 +2808,7 @@ const Academics = ({
   const filteredAssignments = (currentUser?.role === 'admin')
     ? teacherAssignments
     : (currentUser?.role === 'teacher')
-      ? teacherAssignments.filter((a: any) => a.classTeacher === currentUser.name || a.subjectTeachers.some((st: any) => st.teacher === currentUser.name))
+      ? teacherAssignments.filter((a: any) => a.classTeacher === currentUser.name || a.subjectTeachers?.some((st: any) => st.teacher === currentUser.name))
       : teacherAssignments.filter((a: any) => a.class === currentUser?.class && a.section === currentUser?.section);
     
   // Time Table Form
@@ -2654,7 +2839,8 @@ const Academics = ({
     class: '',
     subject: '',
     title: '',
-    description: ''
+    description: '',
+    file: ''
   });
 
   // Homework Form
@@ -2668,7 +2854,7 @@ const Academics = ({
   });
 
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
+  const [homeworkFile, setHomeworkFile] = useState<string | null>(null);
 
   const generateAITimeTable = async () => {
     if (!ttForm.class || !ttForm.section) {
@@ -2970,6 +3156,7 @@ const Academics = ({
       subject: syllabusForm.subject,
       title: syllabusForm.title,
       description: syllabusForm.description,
+      file_url: syllabusForm.file,
       status: 'Not Started'
     };
 
@@ -3007,7 +3194,8 @@ const Academics = ({
             title: data[0].title,
             description: data[0].description,
             status: data[0].status,
-            date: data[0].posted_date
+            date: data[0].posted_date,
+            file_url: data[0].file_url
           }]);
         }
       }
@@ -3018,7 +3206,8 @@ const Academics = ({
         date: formatDate(new Date())
       }]);
     }
-    setSyllabusForm({ class: '', subject: '', title: '', description: '' });
+    setSyllabusForm({ class: '', subject: '', title: '', description: '', file: '' });
+    setEditingSyllabusId(null);
     alert(editingSyllabusId ? 'Syllabus updated!' : 'Syllabus added!');
   };
 
@@ -3048,7 +3237,7 @@ const Academics = ({
       title: homeworkForm.title,
       instructions: homeworkForm.description,
       due_date: homeworkForm.dueDate || new Date().toISOString().split('T')[0],
-      file_url: homeworkFile ? URL.createObjectURL(homeworkFile) : undefined
+      file_url: homeworkFile || undefined
     };
 
     if (supabase) {
@@ -3070,7 +3259,8 @@ const Academics = ({
           subject: payload.subject,
           title: payload.title,
           description: payload.instructions,
-          dueDate: payload.due_date
+          dueDate: payload.due_date,
+          file: payload.file_url
         } : h));
         setEditingHomeworkId(null);
       } else {
@@ -3100,6 +3290,15 @@ const Academics = ({
           }]);
         }
       }
+      setHomeworkFile(null);
+      setHomeworkForm({
+        class: '',
+        section: '',
+        subject: '',
+        title: '',
+        description: '',
+        dueDate: new Date().toISOString().split('T')[0]
+      });
     } else {
       setHomeworks([...homeworks, {
         ...homeworkForm,
@@ -3107,7 +3306,7 @@ const Academics = ({
         teacherName: currentUser?.role === 'teacher' ? currentUser.name : 'Admin',
         date: formatDate(new Date()),
         submissions: [],
-        file: homeworkFile ? URL.createObjectURL(homeworkFile) : undefined
+        file: homeworkFile || undefined
       }]);
     }
     setHomeworkForm({ class: '', section: '', subject: '', title: '', description: '', dueDate: '' });
@@ -3473,7 +3672,7 @@ const Academics = ({
                           )}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {ca.subjectTeachers.map((st: any, idx: number) => (
+                          {ca.subjectTeachers?.map((st: any, idx: number) => (
                             <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center">
                               <span className="text-sm font-bold">{st.subject}</span>
                               <span className="text-sm text-text-sub">{st.teacher}</span>
@@ -3829,7 +4028,11 @@ const Academics = ({
                         onChange={(e: any) => setSyllabusForm({...syllabusForm, description: e.target.value})}
                       ></textarea>
                     </div>
-                    <FileUpload label="Upload Syllabus PDF (Optional)" />
+                    <FileUpload 
+                      label="Upload Syllabus PDF (Optional)" 
+                      preview={syllabusForm.file}
+                      onChange={(base64: string) => setSyllabusForm({...syllabusForm, file: base64})}
+                    />
                     <button onClick={handleAddSyllabus} className="btn-primary w-full py-3 mt-4">Save Syllabus</button>
                   </div>
                 </Card>
@@ -3854,6 +4057,37 @@ const Academics = ({
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-text-sub mr-2">{s.date}</span>
+                            <button 
+                              onClick={() => {
+                                const win = window.open('', '_blank');
+                                if (win) {
+                                  win.document.write(`<html><head><title>Syllabus - ${s.class}</title><style>body{font-family:sans-serif;padding:20px;}h1{color:#1e40af;}h2{color:#475569;border-bottom:1px solid #e2e8f0;padding-bottom:10px;}p{line-height:1.6;}</style></head><body><h1>Syllabus: ${s.class}</h1><h2>${s.subject} - ${s.title}</h2><p>${s.description}</p></body></html>`);
+                                  win.document.close();
+                                  win.print();
+                                }
+                              }}
+                              className="p-1.5 text-primary hover:bg-primary/5 rounded-lg transition-all"
+                              title="Print Syllabus"
+                            >
+                              <Printer size={16} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const text = `*Syllabus: ${s.class}*\nSubject: ${s.subject}\nTitle: ${s.title}\n\n${s.description}`;
+                                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                              }}
+                              className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg transition-all"
+                              title="Share on WhatsApp"
+                            >
+                              <MessageCircle size={16} />
+                            </button>
+                            <button 
+                              onClick={() => window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(s.subject + ' ' + s.title + ' lesson class ' + s.class)}`, '_blank')}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              title="Find on YouTube"
+                            >
+                              <Youtube size={16} />
+                            </button>
                             {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
                               <>
                                 <button 
@@ -3863,7 +4097,8 @@ const Academics = ({
                                       class: s.class,
                                       subject: s.subject,
                                       title: s.title,
-                                      description: s.description || ''
+                                      description: s.description || '',
+                                      file: s.file_url || ''
                                     });
                                   }}
                                   className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
@@ -3917,28 +4152,11 @@ const Academics = ({
                       ></textarea>
                     </div>
                     <Input label="Due Date" type="date" value={homeworkForm.dueDate} onChange={(e: any) => setHomeworkForm({...homeworkForm, dueDate: e.target.value})} />
-                    <div className="space-y-2">
-                      <label className="label-text">Homework PDF (Optional)</label>
-                      <div className="flex flex-col gap-2">
-                        <input 
-                          type="file" 
-                          id="homework-file"
-                          accept=".pdf"
-                          onChange={(e) => setHomeworkFile(e.target.files?.[0] || null)}
-                          className="hidden"
-                        />
-                        <label 
-                          htmlFor="homework-file"
-                          className="w-full border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-slate-50 transition-all"
-                        >
-                          <Upload className="text-slate-400" size={24} />
-                          <span className="text-sm font-medium text-slate-600">
-                            {homeworkFile ? homeworkFile.name : 'Click or drag to upload Homework PDF'}
-                          </span>
-                          <span className="text-xs text-slate-400">PDF only, max 5MB</span>
-                        </label>
-                      </div>
-                    </div>
+                    <FileUpload 
+                      label="Homework PDF (Optional)" 
+                      preview={homeworkFile}
+                      onChange={(base64: string) => setHomeworkFile(base64)}
+                    />
                     <button onClick={handleAddHomework} className="btn-primary w-full py-3 mt-4">Upload Homework</button>
                   </div>
                 </Card>
@@ -3966,6 +4184,37 @@ const Academics = ({
                               <span className="text-xs font-bold text-red-500 block">Due: {h.dueDate}</span>
                               <span className="text-[10px] text-text-sub">By {h.teacherName}</span>
                             </div>
+                            <button 
+                              onClick={() => {
+                                const win = window.open('', '_blank');
+                                if (win) {
+                                  win.document.write(`<html><head><title>Homework - ${h.class}</title><style>body{font-family:sans-serif;padding:20px;}h1{color:#1e40af;}h2{color:#475569;}p{line-height:1.6;}.due{color:#dc2626;font-weight:bold;}</style></head><body><h1>Homework: ${h.class}-${h.section}</h1><h2>${h.subject} - ${h.title}</h2><p class="due">Due Date: ${h.dueDate}</p><p>${h.description}</p></body></html>`);
+                                  win.document.close();
+                                  win.print();
+                                }
+                              }}
+                              className="p-1.5 text-primary hover:bg-primary/5 rounded-lg transition-all"
+                              title="Print Homework"
+                            >
+                              <Printer size={14} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const text = `*Homework: ${h.class}-${h.section}*\nSubject: ${h.subject}\nTitle: ${h.title}\nDue Date: ${h.dueDate}\n\n${h.description}`;
+                                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                              }}
+                              className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg transition-all"
+                              title="Share Homework"
+                            >
+                              <MessageCircle size={14} />
+                            </button>
+                            <button 
+                              onClick={() => window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(h.subject + ' ' + h.title + ' homework help Class ' + h.class)}`, '_blank')}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                              title="Find Help on YouTube"
+                            >
+                              <Youtube size={14} />
+                            </button>
                             {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
                               <div className="flex items-center gap-1">
                                 <button 
@@ -4510,7 +4759,7 @@ const FeeManagement = ({
     const classFees = feeMaster.filter((f: any) => {
       if (f.class !== student.class) return false;
       if (f.studentType && f.studentType !== 'Both' && f.studentType !== student.studentType) return false;
-      if (f.feeType === 'Hostel Fee' && !isHosteller) return false;
+      if (f.feeType.toLowerCase().includes('hostel') && !isHosteller) return false;
 
       // Filter by frequency and month
       if (f.frequency === 'Monthly') return true;
@@ -4530,7 +4779,42 @@ const FeeManagement = ({
       }, 0);
       breakdown[f.feeType] = Math.max(0, f.amount - totalPaidForType);
     });
+
+    // Only apply late fine (₹50 after 12th) for current or past months
+    const today = new Date();
+    const currentMonthIdx = today.getMonth(); // 0-11
+    const selectedMonthIdx = months.indexOf(month); // Use the months array defined in FeeManagement
+    
+    let isAppliedLate = false;
+    if (selectedMonthIdx < currentMonthIdx) {
+      isAppliedLate = true; // Past month
+    } else if (selectedMonthIdx === currentMonthIdx && today.getDate() > 12) {
+      isAppliedLate = true; // Current month after 12th
+    }
+
+    const hasPaidFine = paidTransactions.some((t: any) => t.fine > 0);
+    const hasManualFine = classFees.some((f: any) => f.feeType.toLowerCase() === 'fine');
+    const baseFeesDues = Object.values(breakdown).reduce((s, v) => s + v, 0);
+    
+    // Only add automated fine if:
+    // 1. It is late for the selected month
+    // 2. No fine has been recorded yet for this month
+    // 3. No manual "Fine" fee is already assigned in the fee master
+    // 4. There are still base fees (Tuition, etc.) remaining to be paid
+    if (isAppliedLate && !hasPaidFine && !hasManualFine && baseFeesDues > 0) {
+      breakdown['Fine'] = 50;
+    }
+
     return breakdown;
+  };
+
+  const shareOnWhatsApp = (t: FeeTransaction) => {
+    const text = `*Fee Receipt - ${t.studentName}*\nInvoice: ${t.invoiceNumber}\nAmount: ₹${t.totalPaid}\nDate: ${t.date}\nStatus: Paid`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handlePrintAllReports = () => {
+    window.print();
   };
 
   const handleCollectFee = async () => {
@@ -4549,7 +4833,7 @@ const FeeManagement = ({
     const monthlyFees = feeMaster.filter((f: any) => {
       if (f.class !== selectedStudent.class) return false;
       if (f.studentType && f.studentType !== 'Both' && f.studentType !== selectedStudent.studentType) return false;
-      if (f.feeType === 'Hostel Fee' && !isHosteller) return false;
+      if (f.feeType.toLowerCase().includes('hostel') && !isHosteller) return false;
 
       // Filter by frequency and month
       if (f.frequency === 'Monthly') return true;
@@ -4568,11 +4852,9 @@ const FeeManagement = ({
     const currentDuesBreakdown = getMonthlyDuesBreakdown(selectedStudent, selectedMonth);
     const totalRemainingDue = Object.values(currentDuesBreakdown).reduce((sum, val) => sum + val, 0);
     
-    // Late fee fine logic: Rs 50 after 12th of the month
-    const today = new Date();
-    const isLate = today.getDate() > 12;
-    const fineAmount = isLate ? 50 : 0;
-    const finalDueWithFine = totalRemainingDue + fineAmount;
+    // Late fee fine is already included in currentDuesBreakdown from getMonthlyDuesBreakdown
+    const fineAmount = currentDuesBreakdown['Fine'] || 0;
+    const finalDueWithFine = totalRemainingDue; // No double addition
 
     if (totalRemainingDue <= 0) {
       alert(`All fees for ${selectedMonth} are already paid for ${selectedStudent.name}.`);
@@ -4998,12 +5280,8 @@ const FeeManagement = ({
               const currentDues = getMonthlyDuesBreakdown(selectedStudent, selectedMonth);
               const totalRemaining = Object.values(currentDues).reduce((s, a) => s + (a as number), 0);
               
-              // Late fee fine logic: Rs 50 after 12th of the month
-              const today = new Date();
-              const isLate = today.getDate() > 12;
-              const fineAmount = isLate ? 50 : 0;
-              
-              const totalPayable = totalRemaining + fineAmount - paymentDetails.discount - paymentDetails.scholarship;
+              // No need to add fineAmount here because getMonthlyDuesBreakdown already includes it if late
+              const totalPayable = totalRemaining - paymentDetails.discount - paymentDetails.scholarship;
               return paymentDetails.amountPaid > 0 ? paymentDetails.amountPaid : Math.max(0, totalPayable);
             })()}
           </p>
@@ -5012,11 +5290,21 @@ const FeeManagement = ({
               <p className="text-xs text-red-500 font-bold">
                 Total Outstanding Due: ₹{getStudentDueFees(selectedStudent).toLocaleString()}
               </p>
-              {new Date().getDate() > 12 && (
-                <p className="text-[10px] text-orange-600 font-black uppercase tracking-widest">
-                  * ₹50 Late Fine Applied (After 12th)
-                </p>
-              )}
+              {(() => {
+                const today = new Date();
+                const currentMonthIdx = today.getMonth();
+                const selectedMonthIdx = months.indexOf(selectedMonth);
+                const isLate = selectedMonthIdx < currentMonthIdx || (selectedMonthIdx === currentMonthIdx && today.getDate() > 12);
+                
+                if (isLate) {
+                  return (
+                    <p className="text-[10px] text-orange-600 font-black uppercase tracking-widest">
+                      * ₹50 Late Fine Included (Applied after 12th)
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
         </div>
@@ -5368,8 +5656,8 @@ const FeeManagement = ({
               </button>
             </div>
             <div className="space-y-4">
-              <Input label="Class" value={editingFee.class} disabled />
-              <Input label="Fee Type" value={editingFee.feeType} disabled />
+              <Input label="Class" value={editingFee.class} disabled readOnly />
+              <Input label="Fee Type" value={editingFee.feeType} disabled readOnly />
               <Input 
                 label="Amount" 
                 type="number" 
@@ -5448,7 +5736,7 @@ const FeeManagement = ({
                   const studentFees = feeMaster.filter(f => 
                     f.class === selectedLedgerStudent.class &&
                     (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
-                    (f.feeType !== 'Hostel Fee' || isHosteller)
+                    (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
                   );
                   const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                   const ledgerExportData: any[] = [];
@@ -5467,7 +5755,7 @@ const FeeManagement = ({
                     if (t.fine > 0) {
                       ledgerExportData.push({
                         Date: t.date,
-                        Particulars: 'Late Fine Applied',
+                        Particulars: 'Fine Applied',
                         Type: 'Debit',
                         Debit: t.fine,
                         Credit: 0
@@ -5498,23 +5786,26 @@ const FeeManagement = ({
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {(() => {
+                  const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
                   const studentFees = feeMaster.filter(f => 
                     f.class === selectedLedgerStudent.class &&
-                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType)
+                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
+                    (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
                   );
                   const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                   
                   const totalAssigned = studentFees.reduce((sum, f) => sum + f.amount, 0);
+                  const totalFines = studentTransactions.reduce((sum, t) => sum + (t.fine || 0), 0);
                   const totalPaid = studentTransactions.reduce((sum, t) => sum + t.totalPaid, 0);
                   const totalDiscount = studentTransactions.reduce((sum, t) => sum + (t.discount || 0), 0);
                   const totalScholarship = studentTransactions.reduce((sum, t) => sum + (t.scholarship || 0), 0);
-                  const balance = totalAssigned - totalPaid - totalDiscount - totalScholarship;
+                  const balance = (totalAssigned + totalFines) - totalPaid - totalDiscount - totalScholarship;
 
                   return (
                     <>
                       <Card className="p-6 border-l-4 border-blue-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Total Assigned</p>
-                        <p className="text-2xl font-black text-text-heading">₹{totalAssigned.toLocaleString()}</p>
+                        <p className="text-2xl font-black text-text-heading">₹{(totalAssigned + totalFines).toLocaleString()}</p>
                       </Card>
                       <Card className="p-6 border-l-4 border-green-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Total Paid</p>
@@ -5556,7 +5847,7 @@ const FeeManagement = ({
                         const studentFees = feeMaster.filter(f => 
                           f.class === selectedLedgerStudent.class &&
                           (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
-                          (f.feeType !== 'Hostel Fee' || isHosteller)
+                          (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
                         );
                         const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
                         
@@ -5579,7 +5870,7 @@ const FeeManagement = ({
                           if (t.fine > 0) {
                             ledgerItems.push({
                               date: t.date,
-                              particulars: `Late Fine Applied (${t.period || 'Period'})`,
+                              particulars: `Fine Applied (${t.period || 'Period'})`,
                               type: 'Debit',
                               amount: t.fine,
                               isDebit: true
@@ -5933,13 +6224,35 @@ const FeeManagement = ({
                       />
                     </div>
                   </div>
-                  <button 
-                    onClick={exportToExcel}
-                    className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-700 transition-all"
-                  >
-                    <FileSpreadsheet size={18} />
-                    Export Excel
-                  </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handlePrintAllReports}
+                        className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-900 transition-all shadow-md"
+                      >
+                        <Printer size={18} />
+                        Print All
+                      </button>
+                      <button 
+                        onClick={exportToExcel}
+                        className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-700 transition-all shadow-md"
+                      >
+                        <FileSpreadsheet size={18} />
+                        Export Excel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const text = `*Financial Report - ${schoolProfile.name}*\n\n` + 
+                            filteredTransactions.map(t => 
+                              `• ${t.date} | ${t.studentName} | ₹${t.totalPaid} (${t.feeType})`
+                            ).join('\n');
+                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                        }}
+                        className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-600 transition-all shadow-md"
+                      >
+                        <MessageCircle size={18} />
+                        Share Report
+                      </button>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -5982,6 +6295,13 @@ const FeeManagement = ({
                                 title="Print Receipt"
                               >
                                 <Printer size={16} />
+                              </button>
+                              <button 
+                                onClick={() => shareOnWhatsApp(t)}
+                                className="p-2 text-green-500 hover:bg-green-50 rounded-lg transition-all"
+                                title="Share on WhatsApp"
+                              >
+                                <MessageCircle size={16} />
                               </button>
                               <button 
                                 onClick={async () => {
@@ -6152,18 +6472,68 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
   const [printSize, setPrintSize] = useState<'58mm' | 'A4-half'>('58mm');
   const receiptRef = React.useRef<HTMLDivElement>(null);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (receiptRef.current) {
+      try {
+        const element = receiptRef.current;
+        const canvas = await html2canvas(element, {
+          scale: 3, // Higher scale for better clarity on thermal printers
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Receipt - ${transaction.invoiceNumber || transaction.id}</title>
+                <style>
+                  @page { margin: 0; size: auto; }
+                  body { margin: 0; padding: 0; display: flex; justify-content: center; background: white; }
+                  img { width: 100%; max-width: ${printSize === '58mm' ? '58mm' : '100%'}; height: auto; display: block; }
+                  @media print {
+                    body { margin: 0; }
+                    img { width: 100%; }
+                  }
+                </style>
+              </head>
+              <body>
+                <img src="${imgData}" onload="window.print(); window.close();" />
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+      } catch (err) {
+        console.error('Error during image printing:', err);
+        window.print(); // Fallback to standard print
+      }
+    }
   };
 
   const handleDownloadPDF = async () => {
     if (receiptRef.current) {
-      const canvas = await html2canvas(receiptRef.current);
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false
+      });
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF();
-      const imgProps = pdf.getImageProperties(imgData);
+      
+      // Determine PDF format based on print size
+      const pdfFormat = printSize === '58mm' ? [164, (canvas.height * 164) / canvas.width] : 'a4';
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: pdfFormat
+      });
+      
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Receipt_${transaction.invoiceNumber || transaction.id}.pdf`);
     }
@@ -6205,48 +6575,75 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
           </button>
         </div>
         
-        <div className="p-8 overflow-y-auto max-h-[70vh] flex justify-center bg-slate-100">
+        <div className="p-8 overflow-y-auto max-h-[70vh] flex justify-center bg-slate-50">
            <div 
              ref={receiptRef}
-             className={`bg-white shadow-lg p-6 font-mono text-slate-800 transition-all duration-300 ${
-               printSize === '58mm' ? 'w-[220px] text-[10px]' : 'w-[560px] text-sm'
+             className={`bg-white shadow-lg font-mono text-slate-800 transition-all duration-300 ${
+               printSize === '58mm' ? 'w-[220px] p-2 text-[10px]' : 'w-[560px] p-8 text-sm'
              }`}
              id="printable-receipt"
            >
              <style>{`
-               @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&display=swap');
-               @media print {
+               @import url('https://fonts.googleapis.com/css2?family=Petit+Formal+Script&family=Space+Mono:wght@700&family=Roboto+Condensed:wght@400;700&display=swap');
+               @page { margin: 0 !important; size: ${printSize === '58mm' ? '58mm auto' : 'auto'}; }
+               @media print { 
+                 html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; }
                  body * { visibility: hidden; }
                  #printable-receipt, #printable-receipt * { visibility: visible; }
                  #printable-receipt {
                    position: absolute !important;
                    left: 0 !important;
-                   top: 2mm !important;
-                   width: ${printSize === '58mm' ? '58mm' : '148mm'} !important;
-                   box-shadow: none !important;
-                   padding: ${printSize === '58mm' ? '1mm' : '10mm'} !important;
+                   right: 0 !important;
+                   top: 0 !important;
                    margin: 0 !important;
+                   padding: ${printSize === '58mm' ? '0' : '10mm'} !important;
+                   width: ${printSize === '58mm' ? '58mm' : 'auto'} !important;
+                   min-width: ${printSize === '58mm' ? '0' : '560px'} !important;
+                   box-shadow: none !important;
+                   background: white !important;
+                   -webkit-print-color-adjust: exact;
                  }
                  .no-print { display: none !important; }
                }
-               .circled-font {
-                 font-family: 'Comfortaa', cursive;
+               .receipt-frame {
+                 border: 2px solid black;
+                 padding: 10px;
+                 position: relative;
+                 margin: 0 auto 15px;
+                 width: fit-content;
+                 border-radius: 40% 10% 40% 10% / 10% 40% 10% 40%;
+               }
+               .script-font {
+                 font-family: 'Petit Formal Script', cursive;
+                 font-size: ${printSize === '58mm' ? '12px' : '18px'};
+                 line-height: 1.2;
+               }
+               .bold-mono {
+                 font-family: 'Space Mono', monospace;
                  font-weight: 700;
-                 display: inline-block;
-                 padding: 4px 10px;
-                 border: 1.5px solid #1e293b;
-                 border-radius: 999px;
-                 margin-bottom: 4px;
-                 white-space: nowrap;
+                 letter-spacing: 1px;
+               }
+               .condensed {
+                 font-family: 'Roboto Condensed', sans-serif;
+                 text-transform: uppercase;
                }
              `}</style>
              
-             <div className="text-center mb-4 pt-4">
-               <div className="mb-2">
-                 <h1 className={`${printSize === '58mm' ? 'text-[10px]' : 'text-sm'} circled-font uppercase leading-tight`}>{schoolProfile.name}</h1>
+             <div className="text-center mb-6 pt-4 text-black">
+               <div className="receipt-frame">
+                  <div className="script-font font-bold">Gopimangal & Sons</div>
+                  <div className="script-font" style={{ fontSize: printSize === '58mm' ? '9px' : '13px' }}>Shubhashpark Khowai</div>
                </div>
-               <p className="italic text-[10px] font-bold">{schoolProfile.tagline}</p>
-               <p className="text-[9px] mt-1 font-bold">{schoolProfile.address}</p>
+               
+               <h1 className={`${printSize === '58mm' ? 'text-sm' : 'text-xl'} bold-mono uppercase mt-2`}>GOPIMANGAL&SONS</h1>
+               
+               <div className="condensed font-bold mt-1 space-y-0.5" style={{ fontSize: printSize === '58mm' ? '8px' : '11px' }}>
+                 <p>SUBHASH PARK , KHOWAI</p>
+                 <p>State: 16-Tripura</p>
+                 <p>Ph.No.: 8787792021</p>
+                 <p className="lowercase">Email: sons.gopimangal@gmail.com</p>
+                 <p>GSTIN: 16BJNPN2618E1Z8</p>
+               </div>
              </div>
              
              <div className="border-t border-dashed border-slate-400 my-2"></div>
@@ -6391,13 +6788,25 @@ const TeacherPanel = ({
   examResults,
   setView,
   schoolProfile,
-  supabase
+  supabase,
+  setSelectedStudentQR
 }: any) => {
-  const assignedClasses = teacherAssignments.filter((a: any) => 
-    a.classTeacher === currentUser.name || a.subjectTeachers.some((st: any) => st.teacher === currentUser.name)
-  );
+  const assignedClasses = (teacherAssignments || []).filter((a: any) => {
+    const teacherName = currentUser?.name?.toLowerCase();
+    const isClassTeacher = a.classTeacher?.toLowerCase() === teacherName;
+    const isSubjectTeacher = (a.subjectTeachers || []).some((st: any) => st.teacher?.toLowerCase() === teacherName);
+    return isClassTeacher || isSubjectTeacher;
+  });
   
-  const filteredSyllabuses = syllabuses.filter((s: Syllabus) => 
+  if (!currentUser) {
+    return (
+      <div className="flex items-center justify-center h-64 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+        <p className="text-text-sub font-bold uppercase tracking-widest">User session expired. Please login again.</p>
+      </div>
+    );
+  }
+
+  const filteredSyllabuses = (syllabuses || []).filter((s: Syllabus) => 
     assignedClasses.some(ac => ac.class === s.class)
   );
 
@@ -6567,6 +6976,7 @@ const TeacherPanel = ({
             examSchedules={examSchedules}
             examResults={examResults}
             currentUser={currentUser}
+            onTakeAttendance={() => setActiveTab('attendance')}
           />
         </div>
       )}
@@ -6587,6 +6997,8 @@ const TeacherPanel = ({
             masterData={masterData}
             currentUser={currentUser}
             supabase={supabase}
+            teacherAssignments={teacherAssignments}
+            setSelectedStudentQR={setSelectedStudentQR}
           />
         </div>
       )}
@@ -6702,7 +7114,7 @@ const TeacherPanel = ({
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Subjects</p>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {Array.from(new Set(assignedClasses.flatMap(ac => ac.subjectTeachers.filter((st: any) => st.teacher === currentUser.name).map((st: any) => st.subject)))).map((s: any, i) => (
+                  {Array.from(new Set(assignedClasses.flatMap(ac => (ac.subjectTeachers || []).filter((st: any) => st.teacher === currentUser.name).map((st: any) => st.subject)))).map((s: any, i) => (
                     <span key={i} className="px-2 py-1 bg-white rounded-lg text-xs font-bold border border-slate-200">
                       {s}
                     </span>
@@ -8334,14 +8746,29 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
   );
 };
 
-const Class360View = ({ students, masterData, attendance, feeTransactions, getStudentDueFees, teacherAssignments, formatDate, examSchedules, examResults, currentUser }: any) => {
+const Class360View = ({ students, masterData, attendance, feeTransactions, getStudentDueFees, teacherAssignments, formatDate, examSchedules, examResults, currentUser, onTakeAttendance }: any) => {
   const isTeacher = currentUser?.role === 'teacher';
-  const assignedClasses = isTeacher ? teacherAssignments.filter((a: any) => 
-    a.classTeacher === currentUser?.name || a.subjectTeachers.some((st: any) => st.teacher === currentUser?.name)
-  ) : [];
+  const assignedClasses = isTeacher ? (teacherAssignments || []).filter((a: any) => {
+    const teacherName = currentUser?.name?.toLowerCase();
+    const isClassTeacher = a.classTeacher?.toLowerCase() === teacherName;
+    const isSubjectTeacher = (a.subjectTeachers || []).some((st: any) => st.teacher?.toLowerCase() === teacherName);
+    return isClassTeacher || isSubjectTeacher;
+  }) : [];
 
-  const [selectedClass, setSelectedClass] = useState(assignedClasses.length > 0 ? assignedClasses[0].class : masterData.classes[0]);
-  const [selectedSection, setSelectedSection] = useState(assignedClasses.length > 0 ? assignedClasses[0].section : masterData.sections[0]);
+  const defaultClass = assignedClasses.length > 0 ? assignedClasses[0].class : (masterData?.classes?.[0] || '');
+  const defaultSection = assignedClasses.length > 0 ? assignedClasses[0].section : (masterData?.sections?.[0] || '');
+
+  const [selectedClass, setSelectedClass] = useState(defaultClass);
+  const [selectedSection, setSelectedSection] = useState(defaultSection);
+  
+  // Update state if assigned classes data arrives later or changes
+  useEffect(() => {
+    if (assignedClasses.length > 0 && !selectedClass) {
+      setSelectedClass(assignedClasses[0].class);
+      setSelectedSection(assignedClasses[0].section);
+    }
+  }, [assignedClasses]);
+
   const today = getTodayDate();
 
   const classStudents = students.filter((s: any) => s.class === selectedClass && s.section === selectedSection);
@@ -8384,6 +8811,9 @@ const Class360View = ({ students, masterData, attendance, feeTransactions, getSt
           <p className="text-text-sub font-medium">Deep dive into specific class performance and metrics.</p>
         </div>
         <div className="flex gap-4">
+          <button onClick={onTakeAttendance} className="btn-secondary flex items-center gap-2 px-6">
+            <UserCheck size={18} /> Take Attendance
+          </button>
           <div className="w-48">
             <label className="label-text">Select Class</label>
             <select className="input-field" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
@@ -8445,7 +8875,7 @@ const Class360View = ({ students, masterData, attendance, feeTransactions, getSt
               <div key={s.id} className="flex items-center gap-4">
                 <div className="relative">
                   <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-xl font-black">
-                    {s.name[0]}
+                    {s.name?.charAt(0) || '?'}
                   </div>
                   <div className="absolute -top-2 -right-2 w-6 h-6 bg-yellow-400 text-white rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white">
                     {i + 1}
@@ -9445,23 +9875,32 @@ const ReportsView = ({ students, feeTransactions, attendance, homeworks, hostelA
   );
 };
 
-const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, designations, setDesignations, leaveRequests, setLeaveRequests }: any) => {
+const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, designations, setDesignations, leaveRequests, setLeaveRequests, users, setUsers, masterData, setMasterData }: any) => {
   const [activeTab, setActiveTab] = useState('staff-list');
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [viewStaff, setViewStaff] = useState<Staff | null>(null);
   const [newStaff, setNewStaff] = useState<Partial<Staff>>({
     name: '',
     surname: '',
+    fatherName: '',
+    motherName: '',
+    dob: '',
+    gender: 'Male',
     email: '',
     mobile: '',
+    emergencyContact: '',
     role: '',
     department: '',
     designation: '',
+    qualification: '',
+    experience: '',
+    address: '',
     status: 'Active',
-    dob: '',
-    joiningDate: new Date().toISOString().split('T')[0],
+    joiningDate: '2026-04-20',
     username: '',
-    password: ''
+    password: '',
+    documents: []
   });
   const [newDepartment, setNewDepartment] = useState('');
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
@@ -9482,25 +9921,66 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
     }
     
     try {
+      const staffId = editingStaff ? editingStaff.staffId : (newStaff.username || `STF-${Math.floor(100000 + Math.random() * 900000)}`);
+      let staffPayload: any = {
+        staff_id: staffId,
+        name: newStaff.name,
+        surname: newStaff.surname,
+        father_name: newStaff.fatherName,
+        mother_name: newStaff.motherName,
+        role: newStaff.role,
+        department: newStaff.department,
+        designation: newStaff.designation,
+        email: newStaff.email,
+        mobile: newStaff.mobile,
+        emergency_contact: newStaff.emergencyContact,
+        gender: newStaff.gender,
+        qualification: newStaff.qualification,
+        experience: newStaff.experience,
+        residential_address: newStaff.address,
+        date_of_birth: newStaff.dob,
+        status: newStaff.status,
+        joining_date: newStaff.joiningDate,
+        photo: newStaff.photo,
+        documents: newStaff.documents,
+        login_id: staffId,
+        login_password: newStaff.password || '123'
+      };
+
+      // Generic resilient save function to handle stale schema cache (PGRST204)
+      const saveResiliently = async (payload: any, isUpdate: boolean) => {
+        let currentPayload = { ...payload };
+        let attempt = 0;
+        const maxAttempts = 5;
+
+        while (attempt < maxAttempts) {
+          const request = isUpdate 
+            ? supabase.from('staff').update(currentPayload).eq('staff_id', staffId)
+            : supabase.from('staff').insert([currentPayload]);
+          
+          const { data, error } = await (isUpdate ? request : request.select());
+
+          if (error) {
+            if (error.code === 'PGRST204') {
+              // Extract column name from error message: "Could not find the 'column_name' column..."
+              const match = error.message.match(/column '(.*?)'/i) || error.message.match(/column "(.*?)"/i);
+              if (match && match[1]) {
+                const missingColumn = match[1];
+                console.warn(`Rescheduling save after removing missing column from cache: ${missingColumn}`);
+                delete currentPayload[missingColumn];
+                attempt++;
+                continue;
+              }
+            }
+            throw error;
+          }
+          return data;
+        };
+        throw new Error('Too many schema cache errors');
+      };
+
       if (editingStaff) {
-        const { error: staffError } = await supabase
-          .from('staff')
-          .update({
-            name: newStaff.name,
-            surname: newStaff.surname,
-            role: newStaff.role,
-            department: newStaff.department,
-            designation: newStaff.designation,
-            email: newStaff.email,
-            mobile: newStaff.mobile,
-            date_of_birth: newStaff.dob,
-            status: newStaff.status,
-            joining_date: newStaff.joiningDate,
-            photo: newStaff.photo
-          })
-          .eq('staff_id', editingStaff.staffId);
-        
-        if (staffError) throw staffError;
+        await saveResiliently(staffPayload, true);
 
         // Update user role and name as well
         await supabase
@@ -9512,32 +9992,20 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
           .eq('username', editingStaff.staffId);
 
         setStaff(staff.map((s: Staff) => s.staffId === editingStaff.staffId ? { ...s, ...newStaff } : s));
+        if (setUsers) {
+          setUsers((prev: any[]) => prev.map(u => u.id === editingStaff.staffId ? { 
+            ...u, 
+            role: newStaff.role?.toLowerCase(), 
+            name: `${newStaff.name} ${newStaff.surname}` 
+          } : u));
+        }
         setEditingStaff(null);
         alert('Staff updated successfully!');
       } else {
-        const staffId = newStaff.username || `STF-${Math.floor(100000 + Math.random() * 900000)}`;
-        const { data: staffData, error: staffError } = await supabase
-          .from('staff')
-          .insert([{
-            staff_id: staffId,
-            name: newStaff.name,
-            surname: newStaff.surname,
-            role: newStaff.role,
-            department: newStaff.department,
-            designation: newStaff.designation,
-            email: newStaff.email,
-            mobile: newStaff.mobile,
-            date_of_birth: newStaff.dob,
-            status: newStaff.status,
-            joining_date: newStaff.joiningDate,
-            photo: newStaff.photo
-          }])
-          .select();
-        
-        if (staffError) throw staffError;
+        const staffData = await saveResiliently(staffPayload, false);
 
         // Create user for login
-        await supabase
+        const { error: userError } = await supabase
           .from('users')
           .insert([{
             username: staffId,
@@ -9546,6 +10014,21 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
             role: newStaff.role?.toLowerCase(),
             permissions: newStaff.role?.toLowerCase() === 'teacher' ? ['attendance', 'homework', 'syllabus', 'leaves'] : []
           }]);
+
+        if (userError) throw userError;
+
+        // Update local users state for immediate login capability
+        if (setUsers) {
+          const newUser: any = {
+            id: staffId,
+            username: staffId,
+            name: `${newStaff.name} ${newStaff.surname}`,
+            password: newStaff.password || '123',
+            role: newStaff.role?.toLowerCase() || '',
+            permissions: newStaff.role?.toLowerCase() === 'teacher' ? ['attendance', 'homework', 'syllabus', 'leaves'] : []
+          };
+          setUsers((prev: any[]) => [...prev, newUser]);
+        }
 
         const staffMember: Staff = {
           ...newStaff as Staff,
@@ -9559,14 +10042,24 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
       setNewStaff({
         name: '',
         surname: '',
+        fatherName: '',
+        motherName: '',
+        dob: '',
+        gender: 'Male',
         email: '',
         mobile: '',
+        emergencyContact: '',
         role: '',
         department: '',
         designation: '',
+        qualification: '',
+        experience: '',
+        address: '',
         status: 'Active',
-        dob: '',
-        joiningDate: new Date().toISOString().split('T')[0]
+        joiningDate: '2026-04-20',
+        username: '',
+        password: '',
+        documents: []
       });
     } catch (err) {
       console.error('Error saving staff:', err);
@@ -9594,7 +10087,25 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
 
   const handleEditStaff = (s: Staff) => {
     setEditingStaff(s);
-    setNewStaff(s);
+    setNewStaff({
+      ...s,
+      fatherName: s.fatherName || '',
+      motherName: s.motherName || '',
+      dob: s.dob || '',
+      emergencyContact: s.emergencyContact || '',
+      qualification: s.qualification || '',
+      experience: s.experience || '',
+      address: s.address || '',
+      photo: s.photo || '',
+      email: s.email || '',
+      mobile: s.mobile || '',
+      department: s.department || '',
+      designation: s.designation || '',
+      joiningDate: s.joiningDate || '',
+      username: s.username || '',
+      password: s.password || '',
+      documents: s.documents || []
+    });
     setShowAddStaff(true);
   };
 
@@ -9606,7 +10117,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
           <button 
             onClick={() => {
               setEditingStaff(null);
-              setNewStaff({ status: 'Active', joiningDate: new Date().toISOString().split('T')[0] });
+              setNewStaff({ status: 'Active', joiningDate: '2026-04-20' });
               setShowAddStaff(true);
             }}
             className="btn-primary flex items-center gap-2"
@@ -9691,6 +10202,13 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                     </td>
                     <td className="py-4 px-4 text-right">
                       <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => setViewStaff(s)}
+                          className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-all"
+                          title="View Profile"
+                        >
+                          <Eye size={16} />
+                        </button>
                         <button 
                           onClick={() => handleEditStaff(s)}
                           className="p-2 text-primary hover:bg-primary/5 rounded-lg transition-all"
@@ -9884,49 +10402,85 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
             <h3 className="text-lg font-bold mb-6">{editingDepartment ? 'Edit Department' : 'Add Department'}</h3>
             <div className="space-y-4">
               <Input label="Department Name" value={newDepartment} onChange={(e: any) => setNewDepartment(e.target.value)} />
-              <div className="flex gap-2">
-                {editingDepartment && (
-                  <button 
-                    onClick={() => {
-                      setEditingDepartment(null);
-                      setNewDepartment('');
-                    }}
-                    className="flex-1 py-3 font-bold text-text-sub hover:bg-slate-50 rounded-xl transition-all"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button 
-                  onClick={async () => {
-                    if (!newDepartment) return;
-                    try {
-                      if (editingDepartment) {
-                        const { error } = await supabase
-                          .from('departments')
-                          .update({ name: newDepartment })
-                          .eq('id', editingDepartment.id);
-                        if (error) throw error;
-                        setDepartments(departments.map((d: any) => d.id === editingDepartment.id ? { ...d, name: newDepartment } : d));
-                        setEditingDepartment(null);
-                      } else {
-                        const { data, error } = await supabase
-                          .from('departments')
-                          .insert([{ name: newDepartment }])
-                          .select();
-                        if (error) throw error;
-                        if (data) setDepartments([...departments, data[0]]);
+              <button 
+                onClick={async () => {
+                  const normalizedName = newDepartment.trim();
+                  if (!normalizedName) return;
+
+                  // If editing and name hasn't changed, just close
+                  if (editingDepartment && editingDepartment.name.toLowerCase() === normalizedName.toLowerCase()) {
+                    setEditingDepartment(null);
+                    setNewDepartment('');
+                    return;
+                  }
+
+                  // Check for duplicate locally
+                  const isDuplicate = departments.some((d: any) => 
+                    d.name.toLowerCase() === normalizedName.toLowerCase() && 
+                    (!editingDepartment || d.id !== editingDepartment.id)
+                  );
+
+                  if (isDuplicate) {
+                    alert('A department with this name already exists.');
+                    return;
+                  }
+
+                  try {
+                    if (editingDepartment) {
+                      const { error } = await supabase
+                        .from('departments')
+                        .update({ name: normalizedName })
+                        .eq('id', editingDepartment.id);
+                      if (error) throw error;
+                      
+                      const updatedDepts = departments.map((d: any) => 
+                        d.id === editingDepartment.id ? { ...d, name: normalizedName } : d
+                      );
+                      setDepartments(updatedDepts);
+                      
+                      // Sync with masterData if available
+                      if (masterData && setMasterData) {
+                        setMasterData((prev: any) => ({
+                          ...prev,
+                          departments: updatedDepts.map((d: any) => d.name)
+                        }));
                       }
-                      setNewDepartment('');
-                    } catch (err) {
-                      console.error('Error saving department:', err);
-                      alert('Error saving department');
+                      
+                      setEditingDepartment(null);
+                    } else {
+                      const { data, error } = await supabase
+                        .from('departments')
+                        .insert([{ name: normalizedName }])
+                        .select();
+                      if (error) throw error;
+                      if (data) {
+                        const newList = [...departments, data[0]];
+                        setDepartments(newList);
+                        
+                        // Sync with masterData if available
+                        if (masterData && setMasterData) {
+                          setMasterData((prev: any) => ({
+                            ...prev,
+                            departments: newList.map((d: any) => d.name)
+                          }));
+                        }
+                      }
                     }
-                  }}
-                  className="btn-primary flex-1 py-3"
-                >
-                  {editingDepartment ? 'Update' : 'Save Department'}
-                </button>
-              </div>
+                    setNewDepartment('');
+                  } catch (err: any) {
+                    console.error('Error saving department:', err);
+                    const errorMsg = err.message || JSON.stringify(err);
+                    if (err.code === '23505' || errorMsg.toLowerCase().includes('unique constraint')) {
+                      alert('A department with this name already exists in the database.');
+                    } else {
+                      alert(`Error saving department: ${errorMsg}`);
+                    }
+                  }
+                }}
+                className="btn-primary w-full py-3"
+              >
+                {editingDepartment ? 'Update' : 'Save Department'}
+              </button>
             </div>
           </Card>
           <Card className="md:col-span-2 p-6">
@@ -9962,7 +10516,16 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                                     const { error } = await supabase.from('departments').delete().eq('id', d.id);
                                     if (error && error.code !== '22P02') throw error;
                                   }
-                                  setDepartments(prev => prev.filter((dep: any) => dep.id !== d.id));
+                                  const updatedDepts = departments.filter((dep: any) => dep.id !== d.id);
+                                  setDepartments(updatedDepts);
+                                  
+                                  // Sync with masterData
+                                  if (masterData && setMasterData) {
+                                    setMasterData((prev: any) => ({
+                                      ...prev,
+                                      departments: updatedDepts.map((dep: any) => dep.name)
+                                    }));
+                                  }
                                 } catch (err) {
                                   console.error('Error deleting department:', err);
                                   alert('Error deleting department');
@@ -9989,50 +10552,90 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
           <Card className="md:col-span-1 p-6">
             <h3 className="text-lg font-bold mb-6">{editingDesignation ? 'Edit Designation' : 'Add Designation'}</h3>
             <div className="space-y-4">
-              <Input label="Designation Name" value={newDesignation} onChange={(e: any) => setNewDesignation(e.target.value)} />
-              <div className="flex gap-2">
-                {editingDesignation && (
-                  <button 
-                    onClick={() => {
-                      setEditingDesignation(null);
-                      setNewDesignation('');
-                    }}
-                    className="flex-1 py-3 font-bold text-text-sub hover:bg-slate-50 rounded-xl transition-all"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button 
-                  onClick={async () => {
-                    if (!newDesignation) return;
-                    try {
-                      if (editingDesignation) {
-                        const { error } = await supabase
-                          .from('designations')
-                          .update({ name: newDesignation })
-                          .eq('id', editingDesignation.id);
-                        if (error) throw error;
-                        setDesignations(designations.map((d: any) => d.id === editingDesignation.id ? { ...d, name: newDesignation } : d));
-                        setEditingDesignation(null);
-                      } else {
-                        const { data, error } = await supabase
-                          .from('designations')
-                          .insert([{ name: newDesignation }])
-                          .select();
-                        if (error) throw error;
-                        if (data) setDesignations([...designations, data[0]]);
+              <Input 
+                label="Designation Name" 
+                value={newDesignation} 
+                onChange={(e: any) => setNewDesignation(e.target.value)} 
+              />
+              <button 
+                onClick={async () => {
+                  const normalizedName = newDesignation.trim();
+                  if (!normalizedName) return;
+
+                  // If editing and name hasn't changed, just close
+                  if (editingDesignation && editingDesignation.name.toLowerCase() === normalizedName.toLowerCase()) {
+                    setEditingDesignation(null);
+                    setNewDesignation('');
+                    return;
+                  }
+
+                  // Check for duplicate locally
+                  const isDuplicate = designations.some((d: any) => 
+                    d.name.toLowerCase() === normalizedName.toLowerCase() && 
+                    (!editingDesignation || d.id !== editingDesignation.id)
+                  );
+
+                  if (isDuplicate) {
+                    alert('A designation with this name already exists.');
+                    return;
+                  }
+
+                  try {
+                    if (editingDesignation) {
+                      const { error } = await supabase
+                        .from('designations')
+                        .update({ name: normalizedName })
+                        .eq('id', editingDesignation.id);
+                      if (error) throw error;
+                      
+                      const updatedDesignations = designations.map((d: any) => 
+                        d.id === editingDesignation.id ? { ...d, name: normalizedName } : d
+                      );
+                      setDesignations(updatedDesignations);
+                      
+                      // Sync with masterData if available
+                      if (masterData && setMasterData) {
+                        setMasterData((prev: any) => ({
+                          ...prev,
+                          designations: updatedDesignations.map((d: any) => d.name)
+                        }));
                       }
-                      setNewDesignation('');
-                    } catch (err) {
-                      console.error('Error saving designation:', err);
-                      alert('Error saving designation');
+                      
+                      setEditingDesignation(null);
+                    } else {
+                      const { data, error } = await supabase
+                        .from('designations')
+                        .insert([{ name: normalizedName }])
+                        .select();
+                      if (error) throw error;
+                      if (data) {
+                        const newList = [...designations, data[0]];
+                        setDesignations(newList);
+                        
+                        // Sync with masterData if available
+                        if (masterData && setMasterData) {
+                          setMasterData((prev: any) => ({
+                            ...prev,
+                            designations: newList.map((d: any) => d.name)
+                          }));
+                        }
+                      }
                     }
-                  }}
-                  className="btn-primary flex-1 py-3"
-                >
-                  {editingDesignation ? 'Update' : 'Save Designation'}
-                </button>
-              </div>
+                    setNewDesignation('');
+                  } catch (err: any) {
+                    console.error('Error saving designation:', err);
+                    const errorMsg = err.message || JSON.stringify(err);
+                    if (err.code === '23505' || errorMsg.toLowerCase().includes('unique constraint')) {
+                      alert('A designation with this name already exists in the database.');
+                    } else {
+                      alert(`Error saving designation: ${errorMsg}`);
+                    }
+                  }
+                }}
+                className="btn-primary w-full py-3"
+              >
+                {editingDesignation ? 'Update' : 'Save Designation'}
+              </button>
             </div>
           </Card>
           <Card className="md:col-span-2 p-6">
@@ -10068,7 +10671,16 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                                     const { error } = await supabase.from('designations').delete().eq('id', d.id);
                                     if (error && error.code !== '22P02') throw error;
                                   }
-                                  setDesignations(prev => prev.filter((des: any) => des.id !== d.id));
+                                  const newList = designations.filter((des: any) => des.id !== d.id);
+                                  setDesignations(newList);
+                                  
+                                  // Sync with masterData
+                                  if (masterData && setMasterData) {
+                                    setMasterData((prev: any) => ({
+                                      ...prev,
+                                      designations: newList.map((des: any) => des.name)
+                                    }));
+                                  }
                                 } catch (err) {
                                   console.error('Error deleting designation:', err);
                                   alert('Error deleting designation');
@@ -10090,7 +10702,6 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         </div>
       )}
 
-      {/* Add/Edit Staff Modal */}
       <AnimatePresence>
         {showAddStaff && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50">
@@ -10098,67 +10709,128 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="modal-container max-w-2xl"
+              className="modal-container max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
             >
               <div className="modal-header">
-                <h3 className="text-2xl font-black text-text-heading">{editingStaff ? 'Edit Staff' : 'Add New Staff'}</h3>
+                <div>
+                  <h3 className="text-2xl font-black text-text-heading">{editingStaff ? 'Edit Staff Profile' : 'Add New Staff Member'}</h3>
+                  <p className="text-xs font-black text-text-sub uppercase tracking-widest mt-1">Personnel Information Management</p>
+                </div>
                 <button onClick={() => setShowAddStaff(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                   <X size={24} />
                 </button>
               </div>
 
-              <div className="modal-content custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input label="First Name" required value={newStaff.name} onChange={(e: any) => setNewStaff({...newStaff, name: e.target.value})} />
-                  <Input label="Last Name" required value={newStaff.surname} onChange={(e: any) => setNewStaff({...newStaff, surname: e.target.value})} />
-                  <Input label="Date of Birth" type="date" required value={newStaff.dob} onChange={(e: any) => setNewStaff({...newStaff, dob: e.target.value})} />
-                  <Input label="Email" type="email" value={newStaff.email} onChange={(e: any) => setNewStaff({...newStaff, email: e.target.value})} />
-                  <Input label="Mobile" value={newStaff.mobile} onChange={(e: any) => setNewStaff({...newStaff, mobile: e.target.value})} />
-                  
-                  <div className="w-full">
-                    <label className="label-text">Role <span className="text-red-500">*</span></label>
-                    <select 
-                      className="input-field"
-                      value={newStaff.role}
-                      onChange={(e: any) => setNewStaff({...newStaff, role: e.target.value})}
-                    >
-                      <option value="">Select Role</option>
-                      <option value="Admin">Admin</option>
-                      <option value="Teacher">Teacher</option>
-                      <option value="Accountant">Accountant</option>
-                      <option value="Librarian">Librarian</option>
-                      <option value="Warden">Warden</option>
-                    </select>
+              <div className="modal-content custom-scrollbar p-8 overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  {/* Basic Info */}
+                  <div className="md:col-span-2 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Input label="First Name" required value={newStaff.name} onChange={(e: any) => setNewStaff({...newStaff, name: e.target.value})} />
+                      <Input label="Last Name" required value={newStaff.surname} onChange={(e: any) => setNewStaff({...newStaff, surname: e.target.value})} />
+                      <Input label="Father's Name" value={newStaff.fatherName} onChange={(e: any) => setNewStaff({...newStaff, fatherName: e.target.value})} />
+                      <Input label="Mother's Name" value={newStaff.motherName} onChange={(e: any) => setNewStaff({...newStaff, motherName: e.target.value})} />
+                      <Input label="Date of Birth" type="date" required value={newStaff.dob} onChange={(e: any) => setNewStaff({...newStaff, dob: e.target.value})} />
+                      <Select 
+                        label="Gender" 
+                        options={['Male', 'Female', 'Other']} 
+                        value={newStaff.gender} 
+                        onChange={(e: any) => setNewStaff({...newStaff, gender: e.target.value})} 
+                      />
+                    </div>
                   </div>
 
-                  <div className="w-full">
-                    <label className="label-text">Department</label>
-                    <select 
-                      className="input-field"
-                      value={newStaff.department}
-                      onChange={(e: any) => setNewStaff({...newStaff, department: e.target.value})}
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
-                    </select>
+                  {/* Photo Upload */}
+                  <div className="md:col-span-1 border-l border-slate-100 pl-8">
+                     <FileUpload 
+                      label="Staff Photo" 
+                      icon={ImageIcon} 
+                      preview={newStaff.photo}
+                      onChange={(base64: string) => setNewStaff({...newStaff, photo: base64})}
+                    />
                   </div>
 
-                  <div className="w-full">
-                    <label className="label-text">Designation</label>
-                    <select 
-                      className="input-field"
-                      value={newStaff.designation}
-                      onChange={(e: any) => setNewStaff({...newStaff, designation: e.target.value})}
-                    >
-                      <option value="">Select Designation</option>
-                      {designations.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
-                    </select>
+                  <div className="col-span-full grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-slate-100">
+                    <Input label="Email Address" type="email" value={newStaff.email} onChange={(e: any) => setNewStaff({...newStaff, email: e.target.value})} />
+                    <Input label="Mobile Number" value={newStaff.mobile} onChange={(e: any) => setNewStaff({...newStaff, mobile: e.target.value})} />
+                    <Input label="Emergency Contact" value={newStaff.emergencyContact} onChange={(e: any) => setNewStaff({...newStaff, emergencyContact: e.target.value})} />
                   </div>
 
-                  <Input label="Joining Date" type="date" value={newStaff.joiningDate} onChange={(e: any) => setNewStaff({...newStaff, joiningDate: e.target.value})} />
-                  
+                  <div className="col-span-full grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-slate-100">
+                    <div className="w-full">
+                      <label className="label-text">Role <span className="text-red-500">*</span></label>
+                      <select 
+                        className="input-field"
+                        value={newStaff.role}
+                        onChange={(e: any) => setNewStaff({...newStaff, role: e.target.value})}
+                      >
+                        <option value="">Select Role</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Teacher">Teacher</option>
+                        <option value="Accountant">Accountant</option>
+                        <option value="Librarian">Librarian</option>
+                        <option value="Warden">Warden</option>
+                        <option value="Receptionist">Receptionist</option>
+                        <option value="Driver">Driver</option>
+                        <option value="Helper">Helper</option>
+                      </select>
+                    </div>
+
+                    <div className="w-full">
+                      <label className="label-text">Department</label>
+                      <select 
+                        className="input-field"
+                        value={newStaff.department}
+                        onChange={(e: any) => setNewStaff({...newStaff, department: e.target.value})}
+                      >
+                        <option value="">Select Department</option>
+                        {departments.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="w-full">
+                      <label className="label-text">Designation</label>
+                      <select 
+                        className="input-field"
+                        value={newStaff.designation}
+                        onChange={(e: any) => setNewStaff({...newStaff, designation: e.target.value})}
+                      >
+                        <option value="">Select Designation</option>
+                        {designations.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
+                    <Input label="Qualification" placeholder="e.g. M.A., B.Ed." value={newStaff.qualification} onChange={(e: any) => setNewStaff({...newStaff, qualification: e.target.value})} />
+                    <Input label="Experience" placeholder="e.g. 5 Years in Teaching" value={newStaff.experience} onChange={(e: any) => setNewStaff({...newStaff, experience: e.target.value})} />
+                    <Input label="Joining Date" type="date" value={newStaff.joiningDate} onChange={(e: any) => setNewStaff({...newStaff, joiningDate: e.target.value})} />
+                    <div className="w-full">
+                      <label className="label-text">Status</label>
+                      <select 
+                        className="input-field"
+                        value={newStaff.status}
+                        onChange={(e: any) => setNewStaff({...newStaff, status: e.target.value as any})}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="col-span-full space-y-2 pt-6 border-t border-slate-100">
+                    <label className="label-text">Residential Address</label>
+                    <textarea 
+                      className="input-field min-h-[80px]" 
+                      value={newStaff.address}
+                      onChange={(e: any) => setNewStaff({...newStaff, address: e.target.value})}
+                    />
+                  </div>
+
                   <div className="col-span-full border-t border-slate-100 pt-6 mt-2">
-                    <h4 className="text-sm font-black text-primary uppercase tracking-widest mb-4">Login Credentials</h4>
+                    <h4 className="text-sm font-black text-primary uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <Lock size={16} /> Login Credentials
+                    </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <Input 
                         label="Login ID (Username)" 
@@ -10175,14 +10847,203 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                         onChange={(e: any) => setNewStaff({...newStaff, password: e.target.value})} 
                       />
                     </div>
-                    <p className="text-[10px] text-text-sub mt-2 font-bold uppercase tracking-tighter">If Login ID is left blank, a random ID will be generated.</p>
+                    <p className="text-[10px] text-text-sub mt-2 font-bold uppercase tracking-tighter italic">If Login ID is left blank, a system ID will be generated upon save.</p>
+                  </div>
+
+                  {/* Documents Section */}
+                  <div className="col-span-full border-t border-slate-100 pt-6 mt-2">
+                    <h4 className="text-sm font-black text-primary uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <FileText size={16} /> Staff Documents
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {[
+                        'Aadhaar Card',
+                        'PAN Card',
+                        'Resume / CV',
+                        'Degrees / Marksheets',
+                        'Joining Letter',
+                        'Address Proof',
+                        'Experience Certificate',
+                        'Other'
+                      ].map(docName => {
+                        const existingDoc = newStaff.documents?.find(d => d.name === docName);
+                        return (
+                          <FileUpload
+                            key={docName}
+                            label={docName}
+                            preview={existingDoc?.file}
+                            onChange={(base64: string) => {
+                              const otherDocs = newStaff.documents?.filter(d => d.name !== docName) || [];
+                              setNewStaff({
+                                ...newStaff,
+                                documents: [...otherDocs, { name: docName, file: base64 }]
+                              });
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="modal-footer">
-                <button onClick={() => setShowAddStaff(false)} className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all">Cancel</button>
-                <button onClick={handleAddStaff} className="flex-1 btn-primary py-4">{editingStaff ? 'Update Staff' : 'Save Staff'}</button>
+              <div className="modal-footer mt-auto border-t border-slate-100 p-6">
+                <button onClick={() => setShowAddStaff(false)} className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs">Discard Changes</button>
+                <button onClick={handleAddStaff} className="flex-1 btn-primary py-4 shadow-xl shadow-primary/20 uppercase tracking-widest text-xs">{editingStaff ? 'Update Profile' : 'Register Staff'}</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {viewStaff && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="modal-container max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+            >
+              <div className="modal-header">
+                <div>
+                  <h3 className="text-2xl font-black text-text-heading">Staff Profile</h3>
+                  <p className="text-xs font-black text-text-sub uppercase tracking-widest mt-1">{viewStaff.staffId} • {viewStaff.role}</p>
+                </div>
+                <button onClick={() => setViewStaff(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="modal-content custom-scrollbar p-8 overflow-y-auto bg-slate-50/30">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="md:col-span-1 space-y-6">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center">
+                      <div className="w-32 h-32 rounded-3xl bg-primary/10 flex items-center justify-center text-3xl font-black text-primary overflow-hidden mb-4 border-2 border-primary/5">
+                        {viewStaff.photo ? (
+                          <img src={viewStaff.photo} alt={viewStaff.name} className="w-full h-full object-cover" />
+                        ) : viewStaff.name[0]}
+                      </div>
+                      <h4 className="text-xl font-black text-text-heading text-center mb-1">{viewStaff.name} {viewStaff.surname}</h4>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${viewStaff.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {viewStaff.status}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                      <div>
+                        <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Mobile</p>
+                        <p className="text-sm font-bold text-text-heading flex items-center gap-2"><Phone size={14} className="text-primary" /> {viewStaff.mobile}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Email</p>
+                        <p className="text-sm font-bold text-text-heading flex items-center gap-2"><Mail size={14} className="text-primary" /> {viewStaff.email}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Joining Date</p>
+                        <p className="text-sm font-bold text-text-heading flex items-center gap-2"><CalendarCheck size={14} className="text-primary" /> {viewStaff.joiningDate}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2 space-y-6">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                      <h5 className="text-sm font-black text-primary uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <Briefcase size={18} /> Professional Details
+                      </h5>
+                      <div className="grid grid-cols-2 gap-8">
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Department</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.department || 'Not Assigned'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Designation</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.designation || 'Not Assigned'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Qualification</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.qualification || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Experience</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.experience || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                      <h5 className="text-sm font-black text-primary uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <User size={18} /> Personal Details
+                      </h5>
+                      <div className="grid grid-cols-2 gap-8">
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Father's Name</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.fatherName || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Mother's Name</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.motherName || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Gender</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.gender}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Date of Birth</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.dob}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Address</p>
+                          <p className="text-sm font-bold text-text-heading">{viewStaff.address || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                      <h5 className="text-sm font-black text-primary uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <FileText size={18} /> Uploaded Documents
+                      </h5>
+                      {viewStaff.documents && viewStaff.documents.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {viewStaff.documents.map((doc, idx) => (
+                            <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between group hover:border-primary/30 transition-all">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-xl text-primary">
+                                  <FileText size={16} />
+                                </div>
+                                <span className="text-xs font-bold text-text-heading">{doc.name}</span>
+                              </div>
+                              <a 
+                                href={doc.file} 
+                                download={doc.name}
+                                className="p-2 text-primary hover:bg-white rounded-lg transition-all shadow-sm opacity-0 group-hover:opacity-100"
+                              >
+                                <Download size={14} />
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          <p className="text-text-sub italic text-sm">No documents uploaded for this staff member.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer mt-auto border-t border-slate-100 p-6 flex gap-4">
+                <button 
+                  onClick={() => {
+                    handleEditStaff(viewStaff);
+                    setViewStaff(null);
+                  }}
+                  className="flex-1 btn-primary py-4 uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                >
+                  <Edit2 size={14} /> Edit Profile
+                </button>
+                <button onClick={() => setViewStaff(null)} className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs">Close</button>
               </div>
             </motion.div>
           </div>
@@ -11893,8 +12754,9 @@ const downloadAPK = (type: 'student' | 'staff') => {
         <div style="background: #f8fafc; padding: 16px; border-radius: 16px; text-align: left; margin-bottom: 24px;">
           <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Instructions:</p>
           <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
-            <li>Open the link on your mobile browser.</li>
-            <li>Tap theブラウザ「...」or "Share" button.</li>
+            <li>Open this link on your mobile browser (Chrome/Safari).</li>
+            <li><b>IMPORTANT:</b> If you see a "403" error, make sure you are opening the <b>SHARED</b> link, not the editing link.</li>
+            <li>Tap the browser "Share" or "..." menu button.</li>
             <li>Select <b>"Add to Home Screen"</b>.</li>
           </ul>
         </div>
@@ -12155,6 +13017,60 @@ export default function App() {
         await supabase.rpc('exec_sql', { 
           sql_query: 'ALTER TABLE students ADD COLUMN IF NOT EXISTS student_type TEXT DEFAULT \'Old\';' 
         });
+        
+        // Staff table migrations
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT \'[]\'::jsonb;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS residential_address TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS login_id TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS login_password TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS father_name TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS mother_name TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_birth TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS joining_date TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS emergency_contact TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS gender TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS qualification TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS experience TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS photo TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS staff_id TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'Active\';' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS department TEXT;' 
+        });
+        await supabase.rpc('exec_sql', { 
+          sql_query: 'ALTER TABLE staff ADD COLUMN IF NOT EXISTS designation TEXT;' 
+        });
+        
         console.log('Migrations completed successfully');
       } catch (err) {
         console.warn('Migration error (might be expected if exec_sql is missing):', err);
@@ -12255,6 +13171,7 @@ export default function App() {
   const [studentFilterType, setStudentFilterType] = useState<string>('');
   const [studentFilterSession, setStudentFilterSession] = useState<string>('');
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
+  const [selectedStudentQR, setSelectedStudentQR] = useState<any>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [schoolProfile, setSchoolProfile] = useState<any>({
     name: 'SUBRAI MISSION CONVENT SCHOOL',
@@ -12406,6 +13323,13 @@ export default function App() {
         }
       }
       setMasterData(newMasterData);
+
+      // Fetch Departments and Designations (Object arrays for HR Panel)
+      const { data: deptData } = await supabase.from('departments').select('*');
+      if (deptData) setDepartments(deptData);
+
+      const { data: desigData } = await supabase.from('designations').select('*');
+      if (desigData) setDesignations(desigData);
 
       // Fetch School Profile
       const { data: profile } = await supabase.from('school_profile').select('*').limit(1).single();
@@ -12572,13 +13496,24 @@ export default function App() {
         staffId: s.staff_id,
         name: s.name,
         surname: s.surname,
+        fatherName: s.father_name,
+        motherName: s.mother_name,
+        dob: s.date_of_birth,
+        gender: s.gender,
         email: s.email,
         mobile: s.mobile,
+        emergencyContact: s.emergency_contact,
+        qualification: s.qualification,
+        experience: s.experience,
+        address: s.residential_address,
         role: s.role,
         department: s.department,
         designation: s.designation,
         joiningDate: s.joining_date,
         photo: s.photo,
+        documents: s.documents || [],
+        loginId: s.login_id,
+        loginPassword: s.login_password,
         status: s.status || 'Active'
       })));
 
@@ -12643,14 +13578,24 @@ export default function App() {
       }
 
       const { data: tAssignments } = await supabase.from('teacher_assignments').select('*');
-      if (tAssignments) setTeacherAssignments(tAssignments.map(ta => ({
-        id: ta.id,
-        session: ta.academic_session,
-        class: ta.class_name,
-        section: ta.section_name,
-        classTeacher: ta.class_teacher_name,
-        subjectTeachers: ta.subject_teacher_assignments
-      })));
+      if (tAssignments) setTeacherAssignments(tAssignments.map(ta => {
+        let subjects: any[] = [];
+        try {
+          subjects = typeof ta.subject_teacher_assignments === 'string' 
+            ? JSON.parse(ta.subject_teacher_assignments) 
+            : (ta.subject_teacher_assignments || []);
+        } catch (e) {
+          console.error("Error parsing subject_teacher_assignments", e);
+        }
+        return {
+          id: ta.id,
+          session: ta.academic_session,
+          class: ta.class_name,
+          section: ta.section_name,
+          classTeacher: ta.class_teacher_name,
+          subjectTeachers: Array.isArray(subjects) ? subjects : []
+        };
+      }));
 
       const { data: syllabusData } = await supabase.from('syllabus').select('*');
       if (syllabusData) setSyllabuses(syllabusData.map(s => ({
@@ -12679,7 +13624,7 @@ export default function App() {
       })));
 
       // Fetch Student Attendance
-      const { data: studAttendance } = await supabase.from('student_attendance').select('*');
+      const { data: studAttendance } = await supabase.from('student_attendance').select('*').order('created_at', { ascending: false });
       if (studAttendance) setAttendance(studAttendance.map(sa => ({
         id: sa.id,
         studentId: sa.student_id,
@@ -12688,6 +13633,7 @@ export default function App() {
         section: sa.section_name,
         date: sa.attendance_date,
         status: sa.status,
+        time: sa.created_at ? new Date(sa.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
         period: sa.period,
         ipAddress: sa.ip_address,
         location: sa.location
@@ -12910,19 +13856,38 @@ export default function App() {
 
   // Master Data Handlers
   const addMasterItem = async (key: string, value: string) => {
-    if (!value || !supabase) return;
+    const normalizedValue = value.trim();
+    if (!normalizedValue || !supabase) return;
     
-    const { error } = await supabase.from(key).insert([{ name: value }]);
+    // Check for duplicate locally
+    const items = (masterData as any)[key] || [];
+    if (items.some((item: string) => item.toLowerCase() === normalizedValue.toLowerCase())) {
+      showModal('Duplicate Entry', `The item "${normalizedValue}" already exists in ${key}.`);
+      return;
+    }
+
+    const { data, error } = await supabase.from(key).insert([{ name: normalizedValue }]).select();
     if (error) {
       console.error(`Error adding to ${key}:`, error);
-      showModal('Error', `Failed to add item: ${error.message}`);
+      if (error.code === '23505') {
+        showModal('Duplicate Entry', `The item "${normalizedValue}" already exists.`);
+      } else {
+        showModal('Error', `Failed to add item: ${error.message}`);
+      }
       return;
     }
 
     setMasterData(prev => ({
       ...prev,
-      [key]: [...(prev as any)[key], value]
+      [key]: [...(prev as any)[key], normalizedValue]
     }));
+
+    // Sync with HR states
+    if (key === 'departments' && data) {
+      setDepartments(prev => [...prev, data[0]]);
+    } else if (key === 'designations' && data) {
+      setDesignations(prev => [...prev, data[0]]);
+    }
   };
 
   const deleteMasterItem = async (key: string, index: number) => {
@@ -12940,23 +13905,51 @@ export default function App() {
       ...prev,
       [key]: (prev as any)[key].filter((_: any, i: number) => i !== index)
     }));
+
+    // Sync with HR states
+    if (key === 'departments') {
+      setDepartments(prev => prev.filter(d => d.name !== valueToDelete));
+    } else if (key === 'designations') {
+      setDesignations(prev => prev.filter(d => d.name !== valueToDelete));
+    }
   };
 
   const editMasterItem = async (key: string, index: number, newValue: string) => {
-    if (!newValue || !supabase) return;
+    const normalizedValue = newValue.trim();
+    if (!normalizedValue || !supabase) return;
     const oldValue = (masterData as any)[key][index];
 
-    const { error } = await supabase.from(key).update({ name: newValue }).eq('name', oldValue);
+    if (normalizedValue.toLowerCase() === oldValue.toLowerCase()) return;
+
+    // Check for duplicate locally
+    const items = (masterData as any)[key] || [];
+    if (items.some((item: string) => item.toLowerCase() === normalizedValue.toLowerCase())) {
+      showModal('Duplicate Entry', `The item "${normalizedValue}" already exists in ${key}.`);
+      return;
+    }
+
+    const { data, error } = await supabase.from(key).update({ name: normalizedValue }).eq('name', oldValue).select();
     if (error) {
       console.error(`Error updating ${key}:`, error);
-      showModal('Error', `Failed to update item: ${error.message}`);
+      if (error.code === '23505') {
+        showModal('Duplicate Entry', `The item "${normalizedValue}" already exists.`);
+      } else {
+        showModal('Error', `Failed to update item: ${error.message}`);
+      }
       return;
     }
 
     setMasterData(prev => ({
       ...prev,
-      [key]: (prev as any)[key].map((v: any, i: number) => i === index ? newValue : v)
+      [key]: (prev as any)[key].map((v: any, i: number) => i === index ? normalizedValue : v)
     }));
+
+    // Sync with HR states
+    if (key === 'departments' && data) {
+      setDepartments(prev => prev.map(d => d.name === oldValue ? data[0] : d));
+    } else if (key === 'designations' && data) {
+      setDesignations(prev => prev.map(d => d.name === oldValue ? data[0] : d));
+    }
   };
 
   const generateCredentials = (type: 'Student' | 'Teacher', count: number = 1) => {
@@ -13057,7 +14050,7 @@ export default function App() {
         };
 
         // Try to find staffId or studentId
-        if (enrichedUser.role === 'teacher' || enrichedUser.role === 'admin' || enrichedUser.role === 'super-admin') {
+        if (enrichedUser.role === 'teacher' || enrichedUser.role === 'admin' || enrichedUser.role === 'super-admin' || enrichedUser.role === 'staff') {
           const { data: staffData } = await supabase.from('staff').select('staff_id, name, surname, photo').eq('staff_id', user.username).single();
           if (staffData) {
             enrichedUser.staffId = staffData.staff_id;
@@ -13098,14 +14091,16 @@ export default function App() {
       setLoginError('');
       setCurrentUser({ role: 'warden', name: 'Hostel Warden' });
       setView('hostel');
-    } else if (id.startsWith('TCH-')) {
-      // Mock teacher login for new IDs
+    } else if (id.startsWith('TCH-') || id.startsWith('STF-')) {
+      // Mock teacher/staff login for new IDs as a robust fallback
       setLoginError('');
-      const teacherName = 'Teacher ' + id.split('-')[1];
-      const newUser = { id: id, name: teacherName, role: 'teacher', permissions: ['attendance', 'homework', 'syllabus', 'leaves'] };
+      const teacherName = id.startsWith('TCH-') ? 'Teacher ' + id.split('-')[1] : 'Staff ' + id.split('-')[1];
+      const role = id.startsWith('TCH-') ? 'teacher' : 'staff';
+      const newUser = { id: id, name: teacherName, role: role, permissions: ['attendance', 'homework', 'syllabus', 'leaves'] };
       setUsers([...users, newUser]);
       setCurrentUser(newUser);
-      setView('teacher-panel');
+      if (role === 'teacher') setView('teacher-panel');
+      else setView('dashboard');
     } else if (id.startsWith('PAR-')) {
       // Mock parent login - linked to a student
       const studentId = id.replace('PAR-', 'DS-');
@@ -13180,33 +14175,6 @@ export default function App() {
     }
   };
 
-  const compressImage = (base64: string, maxWidth = 800, quality = 0.7): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!base64 || !base64.startsWith('data:image/')) {
-        resolve(base64);
-        return;
-      }
-      const img = new Image();
-      img.src = base64;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = (maxWidth / width) * height;
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-    });
-  };
-
   const toggleStudentType = async (student: Student) => {
     const newType = student.studentType === 'New' ? 'Old' : 'New';
     try {
@@ -13240,18 +14208,15 @@ export default function App() {
       return;
     }
 
-    // Document Validation
+    // Document Validation - Make optional as per user request
     const photo = formData.photo;
-    const docs = formData.documents || [];
-    const hasAadhaar = docs.some((d: any) => d.name === 'Aadhaar Card' && d.file);
-    const hasCaste = docs.some((d: any) => d.name === 'Caste Certificate' && d.file);
-    const hasParentsDocs = docs.some((d: any) => d.name === 'Parents Documents' && d.file);
-    const hasSignature = docs.some((d: any) => d.name === 'Signature' && d.file);
-    const hasParentsSignature = docs.some((d: any) => d.name === 'Parents Signature' && d.file);
-
-    if (!photo || !hasAadhaar || !hasCaste || !hasParentsDocs || !hasSignature || !hasParentsSignature) {
-      showModal('Validation Error', 'Please upload all required documents: Photo, Aadhaar Card, Caste Certificate, Parents Documents, Student Signature, and Parents Signature.');
-      return;
+    // Removed strict document validation
+    
+    if (!photo) {
+      // Photo is still recommended but let's see if they want it optional too.
+      // Usually "Documents" refers to attachments. I'll make photo optional too if they want "Documents" optional.
+      // But I'll keep a soft warning or just allow it.
+      // The user said "Do not make mandatory to upload Documents".
     }
 
     try {
@@ -13713,7 +14678,7 @@ export default function App() {
             onClick={() => setView('dashboard')} 
             isSidebarOpen={isSidebarOpen}
           />
-          {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
             <>
               {currentUser?.role === 'admin' && (
                 <SidebarItem 
@@ -13793,7 +14758,7 @@ export default function App() {
                   />
                 </>
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
                 <SidebarItem 
                   icon={QrCode} 
                   label={isSidebarOpen ? "Staff Attendance" : ""} 
@@ -14734,126 +15699,72 @@ export default function App() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                         <FileUpload 
                           label="Student Photo" 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={formData.photo}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                setFormData({ ...formData, photo: compressed });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            setFormData({ ...formData, photo: base64 });
                           }}
                         />
                         <FileUpload 
                           label="Student Aadhaar Card" 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Aadhaar Card')?.file}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                const docs = [...(formData.documents || [])];
-                                const index = docs.findIndex(d => d.name === 'Aadhaar Card');
-                                if (index > -1) docs[index].file = compressed;
-                                else docs.push({ name: 'Aadhaar Card', file: compressed });
-                                setFormData({ ...formData, documents: docs });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            const docs = [...(formData.documents || [])];
+                            const index = docs.findIndex(d => d.name === 'Aadhaar Card');
+                            if (index > -1) docs[index].file = base64;
+                            else docs.push({ name: 'Aadhaar Card', file: base64 });
+                            setFormData({ ...formData, documents: docs });
                           }}
                         />
                         <FileUpload 
                           label="Caste Certificate" 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Caste Certificate')?.file}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                const docs = [...(formData.documents || [])];
-                                const index = docs.findIndex(d => d.name === 'Caste Certificate');
-                                if (index > -1) docs[index].file = compressed;
-                                else docs.push({ name: 'Caste Certificate', file: compressed });
-                                setFormData({ ...formData, documents: docs });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            const docs = [...(formData.documents || [])];
+                            const index = docs.findIndex(d => d.name === 'Caste Certificate');
+                            if (index > -1) docs[index].file = base64;
+                            else docs.push({ name: 'Caste Certificate', file: base64 });
+                            setFormData({ ...formData, documents: docs });
                           }}
                         />
                         <FileUpload 
                           label="Parents Documents" 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Parents Documents')?.file}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                const docs = [...(formData.documents || [])];
-                                const index = docs.findIndex(d => d.name === 'Parents Documents');
-                                if (index > -1) docs[index].file = compressed;
-                                else docs.push({ name: 'Parents Documents', file: compressed });
-                                setFormData({ ...formData, documents: docs });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            const docs = [...(formData.documents || [])];
+                            const index = docs.findIndex(d => d.name === 'Parents Documents');
+                            if (index > -1) docs[index].file = base64;
+                            else docs.push({ name: 'Parents Documents', file: base64 });
+                            setFormData({ ...formData, documents: docs });
                           }}
                         />
                         <FileUpload 
                           label="Student Signature" 
                           icon={Signature} 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Signature')?.file}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                const docs = [...(formData.documents || [])];
-                                const index = docs.findIndex(d => d.name === 'Signature');
-                                if (index > -1) docs[index].file = compressed;
-                                else docs.push({ name: 'Signature', file: compressed });
-                                setFormData({ ...formData, documents: docs });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            const docs = [...(formData.documents || [])];
+                            const index = docs.findIndex(d => d.name === 'Signature');
+                            if (index > -1) docs[index].file = base64;
+                            else docs.push({ name: 'Signature', file: base64 });
+                            setFormData({ ...formData, documents: docs });
                           }}
                         />
                         <FileUpload 
                           label="Parents Signature" 
                           icon={Signature} 
-                          required 
                           isViewOnly={isViewOnly}
                           preview={(formData.documents || []).find((d: any) => d.name === 'Parents Signature')?.file}
-                          onChange={(e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = async () => {
-                                const compressed = await compressImage(reader.result as string);
-                                const docs = [...(formData.documents || [])];
-                                const index = docs.findIndex(d => d.name === 'Parents Signature');
-                                if (index > -1) docs[index].file = compressed;
-                                else docs.push({ name: 'Parents Signature', file: compressed });
-                                setFormData({ ...formData, documents: docs });
-                              };
-                              reader.readAsDataURL(file);
-                            }
+                          onChange={(base64: string) => {
+                            const docs = [...(formData.documents || [])];
+                            const index = docs.findIndex(d => d.name === 'Parents Signature');
+                            if (index > -1) docs[index].file = base64;
+                            else docs.push({ name: 'Parents Signature', file: base64 });
+                            setFormData({ ...formData, documents: docs });
                           }}
                         />
                       </div>
@@ -14899,9 +15810,24 @@ export default function App() {
                     <p className="text-text-secondary text-sm sm:text-base">Manage and view all enrolled students.</p>
                   </div>
                   <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
-                    <button className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+                    <button 
+                      onClick={() => {
+                        const ws = XLSX.utils.json_to_sheet(students);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Students");
+                        XLSX.writeFile(wb, "StudentDirectory.xlsx");
+                      }}
+                      className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <FileSpreadsheet size={18} />
+                      Export Excel
+                    </button>
+                    <button 
+                      onClick={() => window.print()}
+                      className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                    >
                       <FileText size={18} />
-                      Export PDF
+                      Export PDF / Print
                     </button>
                     <button 
                       onClick={() => {
@@ -15046,14 +15972,17 @@ export default function App() {
                                 <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg font-bold text-[10px]">{s.session}</span>
                               </td>
                               <td className="py-4">
-                                <div className="w-10 h-10 bg-white border border-slate-200 p-1 rounded-lg">
-                                  <img 
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${s.studentId || s.id}`} 
-                                    alt="QR" 
-                                    className="w-full h-full object-contain"
-                                    referrerPolicy="no-referrer"
+                                <button 
+                                  onClick={() => setSelectedStudentQR(s)}
+                                  className="w-10 h-10 bg-white border border-slate-200 p-1 rounded-lg hover:border-primary hover:shadow-lg transition-all"
+                                  title="Click to view QR Code"
+                                >
+                                  <QRCode 
+                                    value={s.studentId || s.id}
+                                    size={32}
+                                    className="w-full h-full"
                                   />
-                                </div>
+                                </button>
                               </td>
                               <td className="py-4">{s.fatherName}</td>
                               <td className="py-4">
@@ -15167,6 +16096,8 @@ export default function App() {
                   masterData={masterData} 
                   currentUser={currentUser}
                   supabase={supabase}
+                  teacherAssignments={teacherAssignments}
+                  setSelectedStudentQR={setSelectedStudentQR}
                 />
               </motion.div>
             )}
@@ -15206,6 +16137,7 @@ export default function App() {
                   setView={setView}
                   schoolProfile={schoolProfile}
                   supabase={supabase}
+                  setSelectedStudentQR={setSelectedStudentQR}
                 />
               </motion.div>
             )}
@@ -15241,6 +16173,10 @@ export default function App() {
                   setDesignations={setDesignations}
                   leaveRequests={staffLeaveRequests}
                   setLeaveRequests={setStaffLeaveRequests}
+                  users={users}
+                  setUsers={setUsers}
+                  masterData={masterData}
+                  setMasterData={setMasterData}
                 />
               </motion.div>
             )}
@@ -15714,75 +16650,40 @@ export default function App() {
                             label="School Logo" 
                             icon={ImageIcon} 
                             preview={schoolProfile.logo}
-                            onChange={(e: any) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setSchoolProfile({...schoolProfile, logo: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                            onChange={(base64: string) => {
+                              setSchoolProfile({...schoolProfile, logo: base64});
                             }}
                           />
                           <FileUpload 
                             label="Principal Signature" 
                             icon={Signature} 
                             preview={schoolProfile.principalSignature}
-                            onChange={(e: any) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setSchoolProfile({...schoolProfile, principalSignature: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                            onChange={(base64: string) => {
+                              setSchoolProfile({...schoolProfile, principalSignature: base64});
                             }}
                           />
                           <FileUpload 
                             label="Class Teacher Signature" 
                             icon={Signature} 
                             preview={schoolProfile.classTeacherSignature}
-                            onChange={(e: any) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setSchoolProfile({...schoolProfile, classTeacherSignature: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                            onChange={(base64: string) => {
+                              setSchoolProfile({...schoolProfile, classTeacherSignature: base64});
                             }}
                           />
                           <FileUpload 
                             label="Official Stamp" 
                             icon={Stamp} 
                             preview={schoolProfile.schoolStamp}
-                            onChange={(e: any) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setSchoolProfile({...schoolProfile, schoolStamp: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                            onChange={(base64: string) => {
+                              setSchoolProfile({...schoolProfile, schoolStamp: base64});
                             }}
                           />
                           <FileUpload 
                             label="Fee Payment QR Code" 
                             icon={QrCode} 
                             preview={schoolProfile.feeQrUrl}
-                            onChange={(e: any) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setSchoolProfile({...schoolProfile, feeQrUrl: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                            onChange={(base64: string) => {
+                              setSchoolProfile({...schoolProfile, feeQrUrl: base64});
                             }}
                           />
                           <div className="col-span-full">
@@ -16275,6 +17176,68 @@ export default function App() {
                     Got it
                   </button>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Student QR Code Modal */}
+      <AnimatePresence>
+        {selectedStudentQR && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedStudentQR(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 pb-4 flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
+                  <QrCode size={32} />
+                </div>
+                <h3 className="text-xl font-black text-text-heading uppercase tracking-tight">Student QR Code</h3>
+                <p className="text-text-sub text-sm font-bold uppercase tracking-widest mt-1">Verification Identity</p>
+              </div>
+
+              <div className="p-8 pt-0 flex flex-col items-center">
+                <div className="bg-white p-6 rounded-3xl border-4 border-slate-50 shadow-inner mb-6">
+                  <QRCode 
+                    value={selectedStudentQR.studentId || selectedStudentQR.id}
+                    size={200}
+                    level="H"
+                  />
+                </div>
+                
+                <div className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center font-bold">
+                      {selectedStudentQR.name[0]}
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-black text-text-heading uppercase leading-none mb-1">
+                        {selectedStudentQR.name} {selectedStudentQR.surname}
+                      </p>
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                        ID: {selectedStudentQR.studentId}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setSelectedStudentQR(null)}
+                  className="w-full py-4 bg-primary text-white rounded-2xl font-black uppercase tracking-widest hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+                >
+                  Close View
+                </button>
               </div>
             </motion.div>
           </div>
@@ -17405,12 +18368,12 @@ const IDCardsModule = ({
           <p className="text-[10px] opacity-80 font-medium mt-1 uppercase tracking-widest">Identity Card</p>
         </div>
         {orientation === 'landscape' && (
-          <div className="mt-4 w-20 h-20 bg-white rounded-xl p-1 shadow-inner">
-             <img 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.staffId || person.studentId || person.id || 'TCH-12345'}`} 
-              alt="QR Code" 
-              className="w-full h-full object-contain"
-              referrerPolicy="no-referrer"
+          <div className="mt-4 w-20 h-20 bg-white rounded-xl p-1 shadow-inner flex items-center justify-center">
+            <QRCode 
+              value={person.staffId || person.studentId || person.id || 'TCH-12345'}
+              size={80}
+              level="H"
+              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
             />
           </div>
         )}
@@ -17426,11 +18389,11 @@ const IDCardsModule = ({
               </div>
             </div>
             <div className="w-20 h-20 bg-white rounded-xl p-2 shadow-sm border border-slate-100 flex items-center justify-center">
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${person.staffId || person.studentId || person.id || 'TCH-12345'}`} 
-                alt="QR Code" 
-                className="w-full h-full object-contain"
-                referrerPolicy="no-referrer"
+              <QRCode 
+                value={person.staffId || person.studentId || person.id || 'TCH-12345'}
+                size={80}
+                level="H"
+                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
               />
             </div>
           </div>
@@ -18110,7 +19073,7 @@ const ExaminationModule = ({
   const teacherAssignedClasses = currentUser?.role === 'teacher' 
     ? (teacherAssignments || []).filter((a: any) => 
         a.classTeacher === currentUser.name || 
-        a.subjectTeachers.some((st: any) => st.teacher === currentUser.name)
+        (a.subjectTeachers || []).some((st: any) => st.teacher === currentUser.name)
       )
     : [];
 

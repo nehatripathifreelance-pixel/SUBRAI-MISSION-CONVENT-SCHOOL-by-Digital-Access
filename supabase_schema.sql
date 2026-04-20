@@ -697,3 +697,22 @@ BEGIN
         EXECUTE format('CREATE POLICY "Allow Delete" ON public.%I FOR DELETE USING (auth.role() = ''anon'' OR auth.role() = ''authenticated'')', t);
     END LOOP;
 END $$;
+-- Comprehensive Staff Table Schema Update
+ALTER TABLE staff 
+ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS residential_address TEXT,
+ADD COLUMN IF NOT EXISTS login_id TEXT,
+ADD COLUMN IF NOT EXISTS login_password TEXT,
+ADD COLUMN IF NOT EXISTS father_name TEXT,
+ADD COLUMN IF NOT EXISTS mother_name TEXT,
+ADD COLUMN IF NOT EXISTS date_of_birth TEXT,
+ADD COLUMN IF NOT EXISTS joining_date TEXT,
+ADD COLUMN IF NOT EXISTS emergency_contact TEXT,
+ADD COLUMN IF NOT EXISTS gender TEXT,
+ADD COLUMN IF NOT EXISTS qualification TEXT,
+ADD COLUMN IF NOT EXISTS experience TEXT,
+ADD COLUMN IF NOT EXISTS photo TEXT,
+ADD COLUMN IF NOT EXISTS staff_id TEXT,
+ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active',
+ADD COLUMN IF NOT EXISTS department TEXT,
+ADD COLUMN IF NOT EXISTS designation TEXT;
